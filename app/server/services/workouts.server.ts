@@ -1,5 +1,4 @@
 import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
-import type { BatchItem } from "drizzle-orm/batch";
 
 import type { Database } from "~/db";
 import {
@@ -31,19 +30,25 @@ import type {
 import { conflict, invalid, notFound } from "./errors";
 import { newId } from "./ids";
 
-type BatchStatement = BatchItem<"sqlite">;
+/** Anything Drizzle can execute synchronously against SQLite. */
+type BatchStatement = { run: () => unknown };
 
 /**
- * Runs a set of statements as one D1 batch.
+ * Runs a set of statements as one all-or-nothing unit.
  *
- * D1 exposes no interactive transactions, so `batch` is the only way to make a
- * multi-statement write all-or-nothing. Drizzle types the argument as a
- * non-empty tuple; this narrows a dynamically built array to that shape and
- * skips the round trip entirely when there is nothing to do.
+ * This was a D1 `batch`, which was the only all-or-nothing primitive that
+ * runtime offered. SQLite has real interactive transactions, so the same
+ * guarantee comes from a transaction — and a stronger one, since a failure
+ * rolls back rather than depending on the batch being accepted whole.
+ *
+ * The callback must stay synchronous: better-sqlite3 transactions are, and an
+ * `await` inside one would commit before the awaited work ran.
  */
-async function runBatch(db: Database, statements: BatchStatement[]) {
+function runBatch(db: Database, statements: BatchStatement[]): void {
   if (statements.length === 0) return;
-  await db.batch(statements as [BatchStatement, ...BatchStatement[]]);
+  db.transaction(() => {
+    for (const statement of statements) statement.run();
+  });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -225,9 +230,8 @@ export async function replacePlan(
     });
   });
 
-  // D1 has no interactive transactions; `batch` runs the statements as one
-  // atomic unit, which is what keeps a half-written plan off the page.
-  await runBatch(db, statements);
+  // One atomic unit, which is what keeps a half-written plan off the page.
+  runBatch(db, statements);
 
   return getWorkoutDetail(db, userId, existing.id);
 }
@@ -316,7 +320,7 @@ export async function addExerciseToWorkout(
       .where(eq(workout.id, existing.id)),
   );
 
-  await runBatch(db, statements);
+  runBatch(db, statements);
   return getWorkoutDetail(db, userId, existing.id);
 }
 
@@ -356,7 +360,7 @@ export async function removeExerciseFromWorkout(
       .where(eq(workout.id, existing.id)),
   );
 
-  await runBatch(db, statements);
+  runBatch(db, statements);
   return getWorkoutDetail(db, userId, existing.id);
 }
 
@@ -461,7 +465,7 @@ export async function finishWorkout(
       : input.notes.trim()
     : existing.notes;
 
-  await db.batch([
+  runBatch(db, [
     // Anything still pending when the session ends was not performed.
     db
       .update(workoutSet)

@@ -1,8 +1,8 @@
 import { createContext } from "react-router";
 
 /**
- * Per-response CSP nonce. Set by the Worker entry before the request handler
- * runs so that both the middleware (which writes the CSP header) and the root
- * route (which stamps `nonce` onto `<Scripts>`) read the same value.
+ * Per-response CSP nonce. Set by the request-context middleware before the
+ * rest of the chain, so both the security middleware (which writes the CSP
+ * header) and the root route (which stamps it onto `<Scripts>`) agree.
  */
 export const nonceContext = createContext<string>();

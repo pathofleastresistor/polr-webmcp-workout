@@ -33,10 +33,10 @@ services:
       # Authentication bypass for evaluation only. See README.
       DEMO_MODE: ${DEMO_MODE:-}
     volumes:
-      # The D1 SQLite files. This is the only state worth backing up.
+      # The SQLite database. This is the only state worth backing up.
       - spotter-data:/data
     expose:
-      - "8787"
+      - "3000"
     networks:
       - spotter
 

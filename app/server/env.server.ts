@@ -1,21 +1,26 @@
 import { z } from "zod";
 
 /**
- * Secrets are provisioned with `wrangler secret put` and therefore do not appear
- * in the generated `Env` type. Declaring them here keeps every read type-safe
- * without ever committing a value.
+ * The process environment, narrowed to what this deployment reads.
+ *
+ * Every field is optional at this boundary and checked in `readConfig`, so a
+ * missing value fails once, loudly, with a message naming it — rather than as
+ * an `undefined` surfacing somewhere deeper.
  */
-export interface Secrets {
-  BETTER_AUTH_SECRET: string;
-  GOOGLE_CLIENT_ID: string;
-  GOOGLE_CLIENT_SECRET: string;
+export interface AppEnv {
+  /** Public origin browsers use. No trailing slash. */
+  APP_URL?: string;
+  BETTER_AUTH_SECRET?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  /** See `demoMode` below. */
+  DEMO_MODE?: string;
+  /** Path to the SQLite file holding everything. */
+  DATABASE_PATH?: string;
 }
 
-export type AppEnv = Env &
-  Partial<Secrets> & {
-    /** See `demoMode` below. Absent from wrangler.jsonc by design. */
-    DEMO_MODE?: string;
-  };
+/** Relative to the working directory, so a bare `npm start` just works. */
+export const DEFAULT_DATABASE_PATH = "./data/spotter.db";
 
 const authSecretSchema = z
   .string()
@@ -45,17 +50,19 @@ export interface AppConfig {
    * can be explored before any OAuth client exists.
    *
    * It is an authentication bypass, so it is off unless `DEMO_MODE=true` is set
-   * explicitly, it is deliberately absent from wrangler.jsonc (a normal
-   * `wrangler deploy` therefore cannot carry it), and every request it enables
-   * is behind a `requireDemoMode` guard rather than a scattered boolean check.
+   * explicitly, it is absent from every committed env file, and every request
+   * it enables is behind a `requireDemoMode` guard rather than a scattered
+   * boolean check.
    */
   demoMode: boolean;
   /** True when Google sign-in is actually usable. */
   googleEnabled: boolean;
+  /** Path to the SQLite file. */
+  databasePath: string;
 }
 
 /**
- * Validates configuration once per isolate and fails loudly if a deployment is
+ * Validates configuration at startup and fails loudly if a deployment is
  * missing a secret, rather than silently degrading to an insecure default.
  */
 export function readConfig(env: AppEnv): AppConfig {
@@ -107,5 +114,6 @@ export function readConfig(env: AppEnv): AppConfig {
     useSecureCookies: appUrl.startsWith("https://"),
     demoMode,
     googleEnabled: google.success,
+    databasePath: env.DATABASE_PATH?.trim() || DEFAULT_DATABASE_PATH,
   };
 }

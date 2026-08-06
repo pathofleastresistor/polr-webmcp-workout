@@ -10,6 +10,7 @@ import {
 
 import stylesheet from "./app.css?url";
 import { nonceContext } from "./server/nonce";
+import { requestContextMiddleware } from "./server/request-context.server";
 import { securityMiddleware } from "./server/security.server";
 import { getOptionalUser } from "./server/session.server";
 import { ConfirmationDialog } from "./webmcp/ConfirmationDialog";
@@ -18,10 +19,15 @@ import { WebMcpProvider } from "./webmcp/provider";
 import type { Route } from "./+types/root";
 
 /**
- * Runs on every request: rejects cross-origin mutations and stamps the security
- * headers, including the CSP whose nonce is threaded into `<Scripts>` below.
+ * Runs on every request. Order matters: the first builds the application
+ * context and the CSP nonce, the second reads that config to reject
+ * cross-origin mutations and stamp the security headers — including the CSP
+ * whose nonce is threaded into `<Scripts>` below.
  */
-export const middleware: Route.MiddlewareFunction[] = [securityMiddleware];
+export const middleware: Route.MiddlewareFunction[] = [
+  requestContextMiddleware,
+  securityMiddleware,
+];
 
 export const links: Route.LinksFunction = () => [
   { rel: "stylesheet", href: stylesheet },
