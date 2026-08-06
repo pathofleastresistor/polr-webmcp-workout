@@ -6,15 +6,14 @@
     "**/.client/**/*.ts",
     ".react-router/types/**/*"
   ],
-  "exclude": ["node_modules", "build", "drizzle/migrations"],
+  "exclude": ["node_modules", "build", "drizzle/migrations", "server.js"],
   "compilerOptions": {
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
-    "types": [
-      "node",
-      "vite/client",
-      "./worker-configuration.d.ts",
-      "@cloudflare/vitest-pool-workers/types"
-    ],
+    // server/public-origin.mjs runs under Node with no build step, so it is
+    // plain JS; the tests still import it.
+    "allowJs": true,
+    "checkJs": false,
+    "types": ["node", "vite/client"],
     "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "bundler",

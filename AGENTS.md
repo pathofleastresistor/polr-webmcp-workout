@@ -3,11 +3,13 @@
 ## Commands
 
 ```bash
-npm run dev              # vite dev server on :5173 (Workers runtime via @cloudflare/vite-plugin)
-npm run typecheck        # react-router typegen + wrangler types + tsc
+npm run dev              # vite dev server on :5173
+npm run typecheck        # react-router typegen + tsc
 npm run lint             # eslint
-npm test                 # vitest, inside workerd against a real local D1
+npm test                 # vitest in Node, against a real in-memory SQLite
 npm run build            # production build
+npm start                # serve the build with Node (server.js)
+npm run db:migrate       # apply migrations + seed the exercise catalog
 ```
 
 Run `npm run typecheck && npm run lint && npm test` before committing.
@@ -63,6 +65,11 @@ UI equivalent means the person cannot see or undo what their agent did.
   deprecated alias. Resolve it only through `app/webmcp/runtime.ts`.
 - `app/entry.server.tsx` exists solely to thread the CSP nonce into React
   Router's streaming scripts. Without it the page renders but never hydrates.
-- D1 has no interactive transactions — use `db.batch()` (see `runBatch`).
-- Adding a `wrangler.jsonc` binding means re-running `npm run typecheck` to
-  regenerate `worker-configuration.d.ts`.
+- Multi-statement writes go through `runBatch` (see `workouts.server.ts`), which
+  wraps them in a transaction. Its callback must stay synchronous —
+  better-sqlite3 transactions are, and an `await` inside one would commit before
+  the awaited work ran.
+- `server.js` and `server/*.mjs` are plain JavaScript on purpose: they run
+  directly under Node with no build step. The public-origin fix-up lives there
+  because React Router's single-fetch CSRF guard reads `request.url` before any
+  route middleware runs.

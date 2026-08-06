@@ -5,14 +5,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: [
-      "build/**",
-      ".react-router/**",
-      ".wrangler/**",
-      "node_modules/**",
-      "drizzle/**",
-      "worker-configuration.d.ts",
-    ],
+    ignores: ["build/**", ".react-router/**", "node_modules/**", "drizzle/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -41,8 +34,15 @@ export default tseslint.config(
     },
   },
   {
-    // Build-time scripts run in Node, not in the Worker runtime.
-    files: ["scripts/**/*.mjs", "*.config.ts", "*.config.js"],
+    // The server entry, its helpers and the build-time scripts run directly
+    // under Node, outside the bundled application.
+    files: [
+      "server.js",
+      "server/**/*.mjs",
+      "scripts/**/*.mjs",
+      "*.config.ts",
+      "*.config.js",
+    ],
     languageOptions: { globals: globals.node },
     rules: { "no-console": "off" },
   },

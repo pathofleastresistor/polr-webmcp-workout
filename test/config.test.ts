@@ -4,16 +4,11 @@ import { readConfig, type AppEnv } from "~/server/env.server";
 
 const SECRET = "a".repeat(32);
 
-/**
- * Only the fields readConfig looks at; the rest of Env is irrelevant here.
- *
- * `APP_URL` is widened to `string` because `wrangler types` narrows it to the
- * literal in wrangler.jsonc, and these cases deliberately vary it.
- */
-type ConfigOverrides = Partial<Omit<AppEnv, "APP_URL">> & { APP_URL?: string };
-
-const env = (overrides: ConfigOverrides): AppEnv =>
-  ({ APP_URL: "https://spotter.example", ...overrides }) as unknown as AppEnv;
+/** Only the fields readConfig looks at. */
+const env = (overrides: Partial<AppEnv>): AppEnv => ({
+  APP_URL: "https://spotter.example",
+  ...overrides,
+});
 
 describe("readConfig", () => {
   it("accepts a fully configured deployment", () => {

@@ -1,12 +1,22 @@
-import { env } from "cloudflare:test";
+import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
 import { createDatabase, type Database } from "~/db";
 import { exercise, user, userProfile } from "~/db/schema";
 import type { MUSCLE_GROUPS } from "~/db/schema";
 import type { UserProfile } from "~/db/schema";
 
+/**
+ * A private, migrated database per call.
+ *
+ * `:memory:` is scoped to the connection, so every caller gets its own — tests
+ * cannot leak state into each other and none of them can reach a real file.
+ * The real migrations are applied rather than a hand-written schema, so tests
+ * exercise the same indexes, constraints and cascades that production has.
+ */
 export function testDb(): Database {
-  return createDatabase(env.DB);
+  const db = createDatabase(":memory:");
+  migrate(db, { migrationsFolder: "./drizzle/migrations" });
+  return db;
 }
 
 let counter = 0;
@@ -117,12 +127,7 @@ export async function seedDemoCatalog(db: Database): Promise<void> {
     equipment: "barbell",
   }));
 
-  // D1 caps bound parameters per statement at 100, and each row binds 8.
-  const CHUNK = 10;
-  for (let i = 0; i < values.length; i += CHUNK) {
-    await db
-      .insert(exercise)
-      .values(values.slice(i, i + CHUNK))
-      .onConflictDoNothing();
-  }
+  // Previously chunked to stay under D1's 100-bound-parameter cap. SQLite's
+  // limit is far higher, so this is one statement.
+  await db.insert(exercise).values(values).onConflictDoNothing();
 }

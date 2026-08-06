@@ -5,14 +5,10 @@ build/
 .react-router/
 dist/
 
-# Cloudflare / Wrangler
-.wrangler/
-worker-configuration.d.ts
+# Local database
+data/
 
-# Local secrets — never commit. See .dev.vars.example.
-.dev.vars
-.dev.vars.*
-!.dev.vars.example
+# Local secrets — never commit. See .env.example.
 .env
 .env.*
 !.env.example
