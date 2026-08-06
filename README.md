@@ -1,7 +1,7 @@
 # Spotter
 
 A workout tracker and coach built **WebMCP-first**: it assumes the visitor is a
-person *and* their browsing agent, working the same session together.
+person _and_ their browsing agent, working the same session together.
 
 The agent reads your training history, programs your next workout, and logs sets
 as you call them out. You stay on the page, see everything it does, and approve
@@ -10,7 +10,7 @@ anything consequential before it happens.
 - **Stack** — React Router v8 (SSR) on Cloudflare Workers, D1 + Drizzle, Better
   Auth with Google sign-in, Tailwind v4, Zod.
 - **Agent interface** — [WebMCP](https://webmachinelearning.github.io/webmcp/)
-  (`document.modelContext`), 13 tools scoped to what is on screen.
+  (`document.modelContext`), 15 tools scoped to what is on screen.
 
 ---
 
@@ -24,7 +24,7 @@ Three decisions follow from that, and they are what most of the code is about.
 
 **One server surface, two front doors.** Every operation is defined once as a Zod
 schema in `app/domain/contracts.ts`. That schema becomes the WebMCP tool's JSON
-Schema *and* the server's validator. A button click and a tool call hit the same
+Schema _and_ the server's validator. A button click and a tool call hit the same
 resource route, the same authorization check, the same audit log. The two paths
 cannot drift, because there is only one path.
 
@@ -37,7 +37,7 @@ cannot log sets into a session the person is not looking at.
 an exercise, or ending a session pauses for an in-page confirmation, routed
 through `client.requestUserInteraction()` so the browser surfaces the tab first —
 otherwise a dialog could open where nobody sees it and silence would read as
-consent. Dismissing the dialog counts as *no*.
+consent. Dismissing the dialog counts as _no_.
 
 Everything the agent does lands in an activity log the person can read, both live
 in the agent console and persisted in `agent_event`.
@@ -48,35 +48,35 @@ in the agent console and persisted in `agent_event`.
 
 Registered on every page, signed out:
 
-| Tool | |
-|---|---|
+| Tool                   |                                                              |
+| ---------------------- | ------------------------------------------------------------ |
 | `get_service_overview` | What this service does, and that sign-in is the person's job |
 
 Signed in, everywhere:
 
-| Tool | |
-|---|---|
-| `whoami` | Name, units, experience, goal, weekly target |
-| `list_workouts` | History with volume, sets, duration |
-| `get_workout` | One session in full |
+| Tool                    |                                                            |
+| ----------------------- | ---------------------------------------------------------- |
+| `whoami`                | Name, units, experience, goal, weekly target               |
+| `list_workouts`         | History with volume, sets, duration                        |
+| `get_workout`           | One session in full                                        |
 | `get_training_insights` | Volume per muscle group, staleness, streak, estimated 1RMs |
-| `search_exercises` | Catalog lookup — returns the ids a plan needs |
-| `get_active_workout` | The session in progress and what is still pending |
-| `start_workout` | Begins a session and opens it |
+| `search_exercises`      | Catalog lookup — returns the ids a plan needs              |
+| `get_active_workout`    | The session in progress and what is still pending          |
+| `start_workout`         | Begins a session and opens it                              |
 
 On the workout page only, while the session is active:
 
-| Tool | |
-|---|---|
-| `propose_workout_plan` | The suggestion flow — fills the page, person approves |
-| `log_set` | Records a set; the one called most during a session |
-| `add_exercise_to_workout` | Extend mid-session |
-| `remove_exercise_from_workout` | Drop an exercise |
-| `add_workout_note` | Coaching context that carries to later sessions |
-| `finish_workout` | Close out and fold into history |
-| `cancel_workout` | Discard without recording |
+| Tool                           |                                                       |
+| ------------------------------ | ----------------------------------------------------- |
+| `propose_workout_plan`         | The suggestion flow — fills the page, person approves |
+| `log_set`                      | Records a set; the one called most during a session   |
+| `add_exercise_to_workout`      | Extend mid-session                                    |
+| `remove_exercise_from_workout` | Drop an exercise                                      |
+| `add_workout_note`             | Coaching context that carries to later sessions       |
+| `finish_workout`               | Close out and fold into history                       |
+| `cancel_workout`               | Discard without recording                             |
 
-A typical exchange: *"Look at what I've been neglecting and give me 45 minutes."*
+A typical exchange: _"Look at what I've been neglecting and give me 45 minutes."_
 → `get_training_insights` → `search_exercises` → `start_workout` →
 `propose_workout_plan` → you approve → `log_set` per set → `finish_workout`.
 
@@ -146,7 +146,7 @@ npm run deploy
 Then set `APP_URL` in `wrangler.jsonc` `vars` to the deployed origin (no
 trailing slash) and add `https://<your-domain>/api/auth/callback/google` to the
 Google client's authorised redirect URIs. `APP_URL` is load-bearing: it is the
-OAuth redirect base *and* the origin allowlist for state-changing requests, and
+OAuth redirect base _and_ the origin allowlist for state-changing requests, and
 an `https://` value is what flips cookies to `Secure` and enables HSTS.
 
 ---
