@@ -2,6 +2,7 @@ import { env } from "cloudflare:test";
 
 import { createDatabase, type Database } from "~/db";
 import { exercise, user, userProfile } from "~/db/schema";
+import type { MUSCLE_GROUPS } from "~/db/schema";
 import type { UserProfile } from "~/db/schema";
 
 export function testDb(): Database {
@@ -81,4 +82,47 @@ export async function seedExercises(db: Database): Promise<void> {
       },
     ])
     .onConflictDoNothing();
+}
+
+/**
+ * The catalog rows the demo rotation references. Seeded separately from the
+ * small fixture set so demo tests exercise realistic sessions rather than the
+ * degraded "exercise missing" path.
+ */
+export async function seedDemoCatalog(db: Database): Promise<void> {
+  const rows: Array<[string, string, string]> = [
+    ["barbell-bench-press", "Barbell Bench Press", "chest"],
+    ["overhead-press", "Overhead Press", "shoulders"],
+    ["incline-dumbbell-press", "Incline Dumbbell Press", "chest"],
+    ["triceps-pushdown", "Triceps Pushdown", "triceps"],
+    ["back-squat", "Back Squat", "quads"],
+    ["romanian-deadlift", "Romanian Deadlift", "hamstrings"],
+    ["leg-press", "Leg Press", "quads"],
+    ["standing-calf-raise", "Standing Calf Raise", "calves"],
+    ["barbell-row", "Barbell Row", "back"],
+    ["lat-pulldown", "Lat Pulldown", "back"],
+    ["face-pull", "Face Pull", "back"],
+    ["barbell-curl", "Barbell Curl", "biceps"],
+    ["deadlift", "Deadlift", "back"],
+    ["goblet-squat", "Goblet Squat", "quads"],
+    ["plank", "Plank", "core"],
+  ];
+
+  const values = rows.map(([id, name, primaryMuscle]) => ({
+    id: id!,
+    slug: id!,
+    name: name!,
+    primaryMuscle: primaryMuscle as (typeof MUSCLE_GROUPS)[number],
+    secondaryMuscles: [],
+    equipment: "barbell",
+  }));
+
+  // D1 caps bound parameters per statement at 100, and each row binds 8.
+  const CHUNK = 10;
+  for (let i = 0; i < values.length; i += CHUNK) {
+    await db
+      .insert(exercise)
+      .values(values.slice(i, i + CHUNK))
+      .onConflictDoNothing();
+  }
 }

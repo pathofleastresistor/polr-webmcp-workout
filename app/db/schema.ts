@@ -135,6 +135,13 @@ export const userProfile = sqliteTable("user_profile", {
   goal: text("goal"),
   timezone: text("timezone").notNull().default("UTC"),
   weeklyTargetSessions: integer("weekly_target_sessions").notNull().default(3),
+  /**
+   * Marks a throwaway account minted by /demo/start. Sessions belonging to one
+   * are rejected whenever demo mode is off, so turning DEMO_MODE off on a
+   * deployment that previously ran a demo revokes those logins rather than
+   * leaving them valid against the same signing secret.
+   */
+  isDemo: integer("is_demo", { mode: "boolean" }).notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

@@ -34,20 +34,31 @@ export function createAuth(db: Database, config: AppConfig) {
 
     // Google is the only identity provider. Email/password is deliberately off:
     // no password hashes to store, leak, or rotate.
-    emailAndPassword: { enabled: false },
-    socialProviders: {
-      google: {
-        clientId: config.GOOGLE_CLIENT_ID,
-        clientSecret: config.GOOGLE_CLIENT_SECRET,
-        // Google verifies the address before it reaches us.
-        mapProfileToUser: (profile) => ({
-          name: profile.name || profile.email,
-          email: profile.email,
-          image: profile.picture,
-          emailVerified: profile.email_verified ?? false,
-        }),
-      },
-    },
+    //
+    // Demo mode is the sole exception: it turns this on so the demo route can
+    // mint a throwaway account through Better Auth's public API instead of
+    // reaching into its internals. The credentials are generated server-side
+    // and never shown, so there is still no password for a person to reuse.
+    emailAndPassword: { enabled: config.demoMode },
+
+    // Configured only when real credentials exist. In demo mode the object is
+    // empty, so /api/auth/sign-in/social/google simply does not resolve rather
+    // than failing at Google with a blank client id.
+    socialProviders: config.googleEnabled
+      ? {
+          google: {
+            clientId: config.GOOGLE_CLIENT_ID,
+            clientSecret: config.GOOGLE_CLIENT_SECRET,
+            // Google verifies the address before it reaches us.
+            mapProfileToUser: (profile) => ({
+              name: profile.name || profile.email,
+              email: profile.email,
+              image: profile.picture,
+              emailVerified: profile.email_verified ?? false,
+            }),
+          },
+        }
+      : {},
 
     session: {
       expiresIn: THIRTY_DAYS_SECONDS,

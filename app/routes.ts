@@ -10,6 +10,10 @@ export default [
   // session, sign-out).
   route("api/auth/*", "routes/api.auth.ts"),
 
+  // Throwaway sign-in for exploring the app without Google. 404s unless
+  // DEMO_MODE=true; see app/server/env.server.ts.
+  route("demo/start", "routes/demo.start.ts"),
+
   // Resource routes. These are the single server-side surface shared by the UI
   // and by the WebMCP tools, so a tool call and a button click take the exact
   // same validated, authorized path.

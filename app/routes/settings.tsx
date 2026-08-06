@@ -17,6 +17,7 @@ export function meta(): Route.MetaDescriptors {
 export async function loader({ request, context }: Route.LoaderArgs) {
   const user = await requireUser(request, context);
   return {
+    demoMode: getAppContext(context).config.demoMode,
     profile: {
       id: user.id,
       name: user.name,
@@ -74,14 +75,14 @@ export default function Settings({
   loaderData,
   actionData,
 }: Route.ComponentProps) {
-  const { profile } = loaderData;
+  const { profile, demoMode } = loaderData;
   const navigation = useNavigation();
   const saving = navigation.state === "submitting";
 
   useAccountTools();
 
   return (
-    <AppShell user={profile}>
+    <AppShell user={profile} demoMode={demoMode}>
       <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
       <p className="mt-2 text-slate-400">
         These preferences shape what your agent suggests, so it is worth keeping

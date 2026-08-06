@@ -34,6 +34,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   ]);
 
   return {
+    demoMode: getAppContext(context).config.demoMode,
     profile: {
       id: user.id,
       name: user.name,
@@ -77,7 +78,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 }
 
 export default function Dashboard({ loaderData }: Route.ComponentProps) {
-  const { profile, workouts, active, insights, events } = loaderData;
+  const { profile, workouts, active, insights, events, demoMode } = loaderData;
   const navigation = useNavigation();
   const starting = navigation.formAction === "/dashboard";
 
@@ -86,7 +87,7 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
   useAccountTools();
 
   return (
-    <AppShell user={profile}>
+    <AppShell user={profile} demoMode={demoMode}>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">

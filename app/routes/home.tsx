@@ -23,7 +23,12 @@ export function meta(): Route.MetaDescriptors {
 export async function loader({ request, context }: Route.LoaderArgs) {
   const user = await getOptionalUser(request, context);
   if (user) throw redirect("/dashboard");
-  return null;
+
+  const { config } = getAppContext(context);
+  return {
+    googleEnabled: config.googleEnabled,
+    demoMode: config.demoMode,
+  };
 }
 
 /**
@@ -35,6 +40,13 @@ export async function loader({ request, context }: Route.LoaderArgs) {
  */
 export async function action({ request, context }: Route.ActionArgs) {
   const { auth, env, config } = getAppContext(context);
+
+  if (!config.googleEnabled) {
+    throw new Response(
+      "Google sign-in is not configured on this deployment. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or use the demo.",
+      { status: 501 },
+    );
+  }
 
   await enforceRateLimit(env, "AUTH_RATE_LIMIT", rateLimitKey(request, null));
 
@@ -87,7 +99,8 @@ function isSafeRedirect(value: FormDataEntryValue | null): value is string {
   );
 }
 
-export default function Home({ actionData }: Route.ComponentProps) {
+export default function Home({ loaderData, actionData }: Route.ComponentProps) {
+  const { googleEnabled, demoMode } = loaderData;
   // The landing page is itself an agent surface: an agent that arrives here can
   // discover what the service does and learn that sign-in is the person's job.
   useAnonymousTools();
@@ -125,17 +138,38 @@ export default function Home({ actionData }: Route.ComponentProps) {
           </p>
 
           <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center">
-            <Form method="post">
-              <button
-                type="submit"
-                className="inline-flex w-full items-center justify-center gap-3 rounded-xl bg-white px-6 py-3 text-base font-semibold text-slate-900 shadow-lg transition hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 sm:w-auto"
-              >
-                <GoogleMark />
-                Continue with Google
-              </button>
-            </Form>
+            {googleEnabled && (
+              <Form method="post">
+                <button
+                  type="submit"
+                  className="inline-flex w-full items-center justify-center gap-3 rounded-xl bg-white px-6 py-3 text-base font-semibold text-slate-900 shadow-lg transition hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 sm:w-auto"
+                >
+                  <GoogleMark />
+                  Continue with Google
+                </button>
+              </Form>
+            )}
+
+            {demoMode && (
+              <Form method="post" action="/demo/start">
+                <button
+                  type="submit"
+                  className={
+                    googleEnabled
+                      ? "inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-700 px-6 py-3 text-base font-medium text-slate-200 transition hover:bg-slate-900 sm:w-auto"
+                      : "inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sky-500 px-6 py-3 text-base font-semibold text-slate-950 shadow-lg transition hover:bg-sky-400 sm:w-auto"
+                  }
+                >
+                  <span aria-hidden="true">✦</span>
+                  Explore the demo
+                </button>
+              </Form>
+            )}
+
             <p className="text-sm text-slate-400">
-              Free while in beta. No card required.
+              {demoMode
+                ? "The demo creates a throwaway account with 8 weeks of sample training. No sign-up."
+                : "Free while in beta. No card required."}
             </p>
           </div>
 

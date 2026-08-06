@@ -25,6 +25,7 @@ export async function loader({ request, context, params }: Route.LoaderArgs) {
   const workout = await getWorkoutDetail(db, user.id, params.workoutId);
 
   return {
+    demoMode: getAppContext(context).config.demoMode,
     workout,
     profile: {
       id: user.id,
@@ -41,7 +42,7 @@ export async function loader({ request, context, params }: Route.LoaderArgs) {
 }
 
 export default function WorkoutRoute({ loaderData }: Route.ComponentProps) {
-  const { workout, profile } = loaderData;
+  const { workout, profile, demoMode } = loaderData;
 
   // Account-wide tools stay available so the agent can still consult history
   // mid-session; the workout tools are scoped to this page and this workout.
@@ -52,7 +53,7 @@ export default function WorkoutRoute({ loaderData }: Route.ComponentProps) {
   const isEmpty = workout.exercises.length === 0;
 
   return (
-    <AppShell user={profile}>
+    <AppShell user={profile} demoMode={demoMode}>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <Link

@@ -4,13 +4,22 @@ import { AgentConsole } from "./AgentConsole";
 
 interface AppShellProps {
   user: { name: string; image: string | null };
+  /** Renders the demo banner. See app/server/env.server.ts. */
+  demoMode?: boolean;
   children: React.ReactNode;
 }
 
 /** Signed-in chrome: navigation, account, and the always-present agent console. */
-export function AppShell({ user, children }: AppShellProps) {
+export function AppShell({ user, demoMode = false, children }: AppShellProps) {
   return (
     <div className="min-h-screen bg-slate-950">
+      {demoMode && (
+        <p className="bg-amber-500/15 px-4 py-2 text-center text-sm text-amber-100">
+          <strong className="font-semibold">Demo mode.</strong> This is a
+          throwaway account seeded with sample training. Anyone can sign in
+          without credentials — don&apos;t put real data here.
+        </p>
+      )}
       <header className="border-b border-slate-800/80 bg-slate-950/80 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
           <Link to="/dashboard" className="flex items-center gap-2">

@@ -22,12 +22,17 @@ export async function getOptionalUser(
   request: Request,
   context: Readonly<RouterContextProvider>,
 ): Promise<AuthenticatedUser | null> {
-  const { auth, db } = getAppContext(context);
+  const { auth, db, config } = getAppContext(context);
 
   const result = await auth.api.getSession({ headers: request.headers });
   if (!result?.user) return null;
 
   const profile = await ensureProfile(db, result.user.id);
+
+  // Turning DEMO_MODE off revokes demo logins immediately. Without this a
+  // cookie minted while the demo was running would stay valid against the same
+  // signing secret after the deployment became real.
+  if (profile.isDemo && !config.demoMode) return null;
 
   return {
     id: result.user.id,

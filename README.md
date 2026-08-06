@@ -82,7 +82,53 @@ A typical exchange: _"Look at what I've been neglecting and give me 45 minutes."
 
 ---
 
-## Running it locally
+## Try it without Google (demo mode)
+
+Setting up an OAuth client just to look around is a lot of ceremony. Demo mode
+replaces Google sign-in with a one-click throwaway account, seeded with eight
+weeks of sample training so the dashboard, the insights and every read tool have
+something real to work with.
+
+```bash
+npm install
+npx wrangler d1 create polr-workout-db     # paste database_id into wrangler.jsonc
+
+printf 'BETTER_AUTH_SECRET=%s\nDEMO_MODE=true\n' "$(openssl rand -base64 32)" > .dev.vars
+
+npm run db:migrate:local
+npm run db:seed:local
+npm run dev                                 # http://localhost:5173 -> "Explore the demo"
+```
+
+To put it on a public URL, deploy with the flag set as a plain var:
+
+```bash
+npx wrangler d1 migrations apply polr-workout-db --remote
+npm run db:seed:remote
+wrangler secret put BETTER_AUTH_SECRET
+npm run build && npx wrangler deploy --var DEMO_MODE:true
+```
+
+Then set `APP_URL` in `wrangler.jsonc` to the deployed `*.workers.dev` origin and
+deploy once more, so cookies are marked `Secure` and the origin check matches.
+
+**Demo mode is an authentication bypass.** It is off unless `DEMO_MODE` is
+exactly `"true"`, it is deliberately absent from `wrangler.jsonc` so a normal
+`wrangler deploy` cannot carry it, it logs a startup warning, and it shows a
+persistent banner on every page. `/demo/start` returns 404 whenever it is off.
+
+Switching it off later revokes the demo logins: demo accounts are flagged
+`user_profile.is_demo`, and sessions belonging to one are rejected once the flag
+is unset — so a cookie minted during the demo does not survive the same
+deployment becoming real. The demo rows stay in the database; delete them with:
+
+```sql
+DELETE FROM user WHERE id IN (SELECT user_id FROM user_profile WHERE is_demo = 1);
+```
+
+---
+
+## Running it locally (with Google)
 
 **Prerequisites:** Node 22+, a Cloudflare account, and a Google OAuth client.
 
