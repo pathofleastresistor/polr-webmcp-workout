@@ -35,6 +35,23 @@ describe("toolInputSchema", () => {
     expect(schema.$defs).toBeUndefined();
   });
 
+  it("documents the fields that carry what was actually performed", () => {
+    // Undescribed, these read to an agent as interchangeable with the planned
+    // targets, and a set done at a different load or rep count gets logged as
+    // the plan instead of what happened.
+    const schema = toolInputSchema(logSetInput) as {
+      properties: Record<string, { description?: string }>;
+    };
+
+    for (const field of ["reps", "weightKg", "rpe"]) {
+      expect(schema.properties[field]?.description).toBeTruthy();
+    }
+
+    // The unit is not inferable and the UI silently converts for lb users, so
+    // an agent that assumes display units writes pounds into a kg column.
+    expect(schema.properties.weightKg?.description).toMatch(/kilograms/i);
+  });
+
   it("inlines nested structures rather than emitting $refs", () => {
     const json = JSON.stringify(toolInputSchema(proposePlanInput));
     expect(json).not.toContain("$ref");

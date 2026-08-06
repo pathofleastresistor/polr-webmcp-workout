@@ -41,6 +41,81 @@ export function generateNonce(): string {
 }
 
 /**
+ * Rebuilds an inbound request so its URL and `Origin` describe the deployment's
+ * public origin rather than whatever internal hop delivered it.
+ *
+ * Behind a TLS-terminating reverse proxy the runtime only ever sees the last
+ * hop, which is plaintext and addressed to a container name. Two things follow,
+ * and together they make every mutation fail:
+ *
+ *  - `request.url` becomes something like `http://spotter-container:8787/…`.
+ *    React Router's single-fetch CSRF guard compares the `Origin` header's host
+ *    against `new URL(request.url).host`, so a browser's form submission is
+ *    rejected with a bare 400 before any route code runs.
+ *  - The runtime rewrites the `Origin` header's scheme to match the hop, so a
+ *    browser's `https://…` arrives as `http://…` and `assertSameOrigin` below
+ *    rejects it against the https `APP_URL`.
+ *
+ * The two are unsatisfiable at the proxy: whichever way it is configured, one
+ * check or the other sees a mismatch. Pinning both to the configured origin
+ * here is the only place that fixes them together.
+ *
+ * `APP_URL` is the source of truth rather than `X-Forwarded-*`, deliberately.
+ * It is already mandatory and already validated, and a header the client
+ * controls must never be able to move the origin that the CSRF checks are
+ * measured against — trusting one would hand an attacker the very comparison
+ * these checks exist to enforce.
+ */
+export function normalizePublicRequest(
+  request: Request,
+  appUrl: string,
+): Request {
+  let publicOrigin: URL;
+  try {
+    publicOrigin = new URL(appUrl);
+  } catch {
+    // readConfig already reports a malformed APP_URL; do not compound it.
+    return request;
+  }
+
+  const url = new URL(request.url);
+  const urlIsPublic =
+    url.protocol === publicOrigin.protocol && url.host === publicOrigin.host;
+
+  // Only ever repair the scheme of an Origin that already names the public
+  // host. A genuinely cross-origin request carries a different host, is left
+  // untouched, and still fails the check below — so this cannot mask an attack.
+  const origin = request.headers.get("Origin");
+  const originNeedsRepair =
+    origin !== null &&
+    origin !== publicOrigin.origin &&
+    hostOf(origin) === publicOrigin.host;
+
+  if (urlIsPublic && !originNeedsRepair) return request;
+
+  url.protocol = publicOrigin.protocol;
+  url.host = publicOrigin.host;
+  // Assigned explicitly: the `host` setter only overwrites the port when the
+  // value it is given carries one, so the internal hop's port would otherwise
+  // survive onto the public host (…:8787).
+  url.port = publicOrigin.port;
+
+  const normalized = new Request(url, request);
+  if (originNeedsRepair) {
+    normalized.headers.set("Origin", publicOrigin.origin);
+  }
+  return normalized;
+}
+
+function hostOf(value: string): string | null {
+  try {
+    return new URL(value).host;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Rejects state-changing requests whose `Origin` is not this deployment.
  *
  * Session cookies are `SameSite=Lax`, which already blocks cross-site form
