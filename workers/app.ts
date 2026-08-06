@@ -2,7 +2,10 @@ import { createRequestHandler, RouterContextProvider } from "react-router";
 
 import { appContext, createAppContext } from "~/server/context";
 import { nonceContext } from "~/server/nonce";
-import { generateNonce } from "~/server/security.server";
+import {
+  generateNonce,
+  normalizePublicRequest,
+} from "~/server/security.server";
 
 const requestHandler = createRequestHandler(
   () => import("virtual:react-router/server-build"),
@@ -13,8 +16,17 @@ export default {
   async fetch(request, env, ctx) {
     const context = new RouterContextProvider();
 
+    let appRequest: Request;
+
     try {
-      context.set(appContext, createAppContext(env, ctx));
+      const app = createAppContext(env, ctx);
+      context.set(appContext, app);
+
+      // Must happen before the request reaches the router: React Router's own
+      // single-fetch CSRF guard reads `request.url`, so a request still
+      // carrying the internal hop's address is rejected before any route or
+      // middleware of ours runs.
+      appRequest = normalizePublicRequest(request, app.config.appUrl);
     } catch (error) {
       // Misconfiguration (missing secrets) — fail closed with no detail.
       console.error("Failed to build request context", error);
@@ -26,6 +38,6 @@ export default {
 
     context.set(nonceContext, generateNonce());
 
-    return requestHandler(request, context);
+    return requestHandler(appRequest, context);
   },
 } satisfies ExportedHandler<Env>;

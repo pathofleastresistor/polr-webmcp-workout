@@ -41,6 +41,12 @@ export interface RegisteredTool {
 
 interface WebMcpContextValue {
   availability: WebMcpAvailability;
+  /**
+   * Changes each time the page is restored from the back/forward cache, which
+   * invalidates every registration made before the freeze. Tools depend on it
+   * so they re-register against the connection that is actually live.
+   */
+  connectionEpoch: number;
   tools: RegisteredTool[];
   activity: ActivityEntry[];
   pendingConfirmation: ConfirmationRequest | null;
@@ -63,6 +69,52 @@ const WebMcpContext = createContext<WebMcpContextValue | null>(null);
 const MAX_ACTIVITY_ENTRIES = 50;
 
 /**
+ * Tracks restores from the back/forward cache.
+ *
+ * A page frozen into the bfcache and later restored keeps its React tree
+ * intact — the components never unmounted, so no effect re-runs and nothing in
+ * React observes that anything happened. The agent's connection to the page
+ * does not survive the freeze, though. Every tool registered beforehand is
+ * unreachable, and the next call fails in the browser before it ever reaches
+ * this page, which is what surfaces to an agent as:
+ *
+ *   The page keeping the extension port is moved into back/forward cache,
+ *   so the message channel is closed.
+ *
+ * Nothing this app does navigates the document, but the person or their agent
+ * can — pressing back, or the agent driving the tab somewhere and returning is
+ * enough. So this cannot be prevented here, only recovered from: the counter
+ * below changes on every restore, `useWebMcpTool` depends on it, and every tool
+ * re-registers against the live connection.
+ */
+let restoreCount = 0;
+const restoreListeners = new Set<() => void>();
+
+function handlePageShow(event: PageTransitionEvent) {
+  // `persisted` is what distinguishes a bfcache restore from an ordinary load.
+  // An ordinary load builds a new document, where registration happens anyway.
+  if (!event.persisted) return;
+  restoreCount += 1;
+  for (const listener of restoreListeners) listener();
+}
+
+function subscribeToRestores(onStoreChange: () => void) {
+  if (typeof window === "undefined") return () => {};
+
+  restoreListeners.add(onStoreChange);
+  if (restoreListeners.size === 1) {
+    window.addEventListener("pageshow", handlePageShow);
+  }
+
+  return () => {
+    restoreListeners.delete(onStoreChange);
+    if (restoreListeners.size === 0) {
+      window.removeEventListener("pageshow", handlePageShow);
+    }
+  };
+}
+
+/**
  * Holds everything the page needs to behave as an agent surface: which tools
  * are currently registered, what the agent has been doing, and the confirmation
  * handshake for consequential actions.
@@ -70,18 +122,24 @@ const MAX_ACTIVITY_ENTRIES = 50;
  * Deliberately a plain React context rather than an external store — the state
  * is small, per-tab, and never needs to outlive the page.
  */
-/** The tool list is fixed once the document exists, so nothing to subscribe to. */
-const noopSubscribe = () => () => {};
-
 export function WebMcpProvider({ children }: { children: ReactNode }) {
   // `document.modelContext` does not exist during SSR, so this is read through
   // `useSyncExternalStore`: the server snapshot is "pending" and the client
   // snapshot is the real answer, which keeps hydration consistent without a
   // state-setting effect.
+  // Both re-read on a bfcache restore: the connection the page had before the
+  // freeze is gone, so neither the availability answer nor the registrations
+  // made against it still hold.
   const availability = useSyncExternalStore<WebMcpAvailability>(
-    noopSubscribe,
+    subscribeToRestores,
     detectAvailability,
     () => "pending",
+  );
+
+  const connectionEpoch = useSyncExternalStore(
+    subscribeToRestores,
+    () => restoreCount,
+    () => 0,
   );
 
   const [tools, setTools] = useState<RegisteredTool[]>([]);
@@ -181,6 +239,7 @@ export function WebMcpProvider({ children }: { children: ReactNode }) {
   const value = useMemo<WebMcpContextValue>(
     () => ({
       availability,
+      connectionEpoch,
       tools,
       activity,
       pendingConfirmation,
@@ -192,6 +251,7 @@ export function WebMcpProvider({ children }: { children: ReactNode }) {
     }),
     [
       availability,
+      connectionEpoch,
       tools,
       activity,
       pendingConfirmation,
