@@ -200,11 +200,53 @@ export const logSetInput = z.object({
     .min(1)
     .max(50)
     .describe("1-based position of the set within the exercise."),
-  reps: z.number().int().min(0).max(1000).optional(),
-  weightKg: z.number().min(0).max(1000).optional(),
-  rpe: z.number().min(1).max(10).optional(),
-  durationSeconds: z.number().int().min(0).max(86_400).optional(),
-  distanceMeters: z.number().min(0).max(1_000_000).optional(),
+  // These are what the person *actually did*, and recording that faithfully is
+  // the entire point of the tool. They were previously undescribed, which left
+  // an agent with no way to tell them apart from the planned targets and no
+  // statement of units — so a set performed at a different load or rep count
+  // was commonly logged as the plan, and pounds were logged as kilograms.
+  reps: z
+    .number()
+    .int()
+    .min(0)
+    .max(1000)
+    .optional()
+    .describe(
+      "Repetitions actually completed. Pass this whenever it differs from the planned target; omit only when the set went exactly to plan.",
+    ),
+  weightKg: z
+    .number()
+    .min(0)
+    .max(1000)
+    .optional()
+    .describe(
+      "Load actually used, in kilograms. Always kilograms, regardless of the person's display units — convert before calling if they speak in pounds. Pass this whenever it differs from the planned target; omit only when the set went exactly to plan.",
+    ),
+  rpe: z
+    .number()
+    .min(1)
+    .max(10)
+    .optional()
+    .describe(
+      "Rate of perceived exertion the person actually reported, 1-10. Overrides the planned target.",
+    ),
+  durationSeconds: z
+    .number()
+    .int()
+    .min(0)
+    .max(86_400)
+    .optional()
+    .describe(
+      "Time actually spent on the set, in seconds. Overrides the planned target.",
+    ),
+  distanceMeters: z
+    .number()
+    .min(0)
+    .max(1_000_000)
+    .optional()
+    .describe(
+      "Distance actually covered, in metres. Overrides the planned target.",
+    ),
   status: z
     .enum(["completed", "skipped"])
     .default("completed")
