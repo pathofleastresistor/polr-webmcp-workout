@@ -189,6 +189,37 @@ export const removeExerciseInput = z.object({
   ),
 });
 
+export const createExerciseInput = z.object({
+  name: freeText(80)
+    .min(1)
+    .describe(
+      "The exercise as the person would say it, e.g. 'Bulgarian Split Squat'. Matched case-insensitively against what they already have, so a name they have used before returns that same exercise rather than making a second one.",
+    ),
+  primaryMuscle: muscleGroupSchema.describe(
+    "The muscle group this movement loads most. This is what volume and staleness in get_training_insights are attributed to, so an inaccurate value quietly skews their training picture.",
+  ),
+  secondaryMuscles: z
+    .array(muscleGroupSchema)
+    .max(6)
+    .default([])
+    .describe(
+      "Other muscle groups meaningfully loaded. They receive a reduced share of the volume in insights.",
+    ),
+  equipment: freeText(40)
+    .default("bodyweight")
+    .describe("e.g. 'barbell', 'dumbbell', 'cable', 'machine', 'bodyweight'."),
+  modality: modalitySchema
+    .default("strength")
+    .describe(
+      "'strength' for loaded work, 'cardio' for distance or duration work, 'mobility' for stretching and activation.",
+    ),
+  isUnilateral: z
+    .boolean()
+    .default(false)
+    .describe("True if the movement trains one side at a time."),
+});
+export type CreateExerciseInput = z.infer<typeof createExerciseInput>;
+
 export const logSetInput = z.object({
   workoutId: idSchema,
   workoutExerciseId: idSchema.describe(

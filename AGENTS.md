@@ -9,7 +9,7 @@ npm run lint             # eslint
 npm test                 # vitest in Node, against a real in-memory SQLite
 npm run build            # production build
 npm start                # serve the build with Node (server.js)
-npm run db:migrate       # apply migrations + seed the exercise catalog
+npm run db:migrate       # apply migrations
 ```
 
 Run `npm run typecheck && npm run lint && npm test` before committing.

@@ -589,7 +589,7 @@ async function resolvePlannedExercises(
       if (!found) {
         throw invalid(
           "unknown_exercise",
-          `No exercise with id "${plan.exerciseId}". Use search_exercises to find valid ids.`,
+          `No exercise with id "${plan.exerciseId}". Use search_exercises to find valid ids, or create_exercise to add the movement.`,
         );
       }
       results.push({ exercise: found, plan });
@@ -623,7 +623,7 @@ async function resolvePlannedExercises(
     if (matches.length === 0) {
       throw invalid(
         "unknown_exercise",
-        `No exercise named "${name}". Call search_exercises to see what exists, then pass exerciseId.`,
+        `No exercise named "${name}" yet. Call create_exercise to add it — the library is built from what this person trains — then pass the id it returns.`,
       );
     }
 

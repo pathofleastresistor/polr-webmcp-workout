@@ -5,6 +5,7 @@ import {
   getWorkoutInput,
   insightsInput,
   listWorkoutsInput,
+  createExerciseInput,
   searchExercisesInput,
   startWorkoutInput,
 } from "~/domain/contracts";
@@ -143,9 +144,9 @@ export function useAccountTools() {
 
   useWebMcpTool({
     name: "search_exercises",
-    title: "Search the exercise catalog",
+    title: "Search this person's exercises",
     description:
-      "Finds exercises by name, muscle group or equipment, returning the ids needed to build a plan. Always resolve exercises through this tool before calling propose_workout_plan — passing an id is unambiguous, whereas a name that matches two entries is rejected.",
+      "Finds exercises this person already has, by name, muscle group or equipment, returning the ids a plan needs. There is no shared catalog: the library starts empty and is built from what they actually train. A movement they have not done before will not be here — call create_exercise for it rather than treating the absence as a dead end.",
     schema: searchExercisesInput,
     annotations: { readOnlyHint: true, idempotentHint: true },
     activityLabel: (args) =>
@@ -158,7 +159,7 @@ export function useAccountTools() {
 
       if (result.exercises.length === 0) {
         return toolOk(
-          "No exercises matched. Try a broader query, or search by muscleGroup instead of name.",
+          "No exercises matched. Either broaden the query, or — if this is a movement they have simply not logged before — call create_exercise to add it and use the id it returns.",
           result,
         );
       }
@@ -170,6 +171,36 @@ export function useAccountTools() {
               `${item.name} — ${item.primaryMuscle}, ${item.equipment} (id=${item.id})`,
           )
           .join("\n"),
+        result,
+      );
+    },
+  });
+
+  useWebMcpTool({
+    name: "create_exercise",
+    title: "Add an exercise",
+    description:
+      "Adds a movement to this person's exercise library and returns its id, ready to use in a plan. Call it whenever search_exercises does not already have what you want to program — the library is theirs and starts empty, so building it up is expected rather than exceptional. Safe to call speculatively: a name they already have returns that existing exercise instead of creating a duplicate. Get primaryMuscle right, because volume and staleness in get_training_insights are attributed by it.",
+    schema: createExerciseInput,
+    annotations: {
+      readOnlyHint: false,
+      // Re-calling with the same name returns the same exercise.
+      idempotentHint: true,
+    },
+    activityLabel: (args) => `Added "${args.name}"`,
+    execute: async (args) => {
+      // No confirmation. Adding a library entry changes nothing the person has
+      // done and nothing on screen, and prompting per exercise would interrupt
+      // planning several times over. The plan it feeds is confirmed instead.
+      const result = await apiFetch<{
+        exercise: ExerciseView;
+        created: boolean;
+      }>("/api/exercises", { method: "POST", body: args, actor: "agent" });
+
+      return toolOk(
+        result.created
+          ? `Added "${result.exercise.name}" (id=${result.exercise.id}), a ${result.exercise.equipment} ${result.exercise.primaryMuscle} movement. Use that id in the plan.`
+          : `"${result.exercise.name}" already exists (id=${result.exercise.id}); using it rather than adding a second copy. Use that id in the plan.`,
         result,
       );
     },

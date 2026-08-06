@@ -4,6 +4,7 @@ import type {
   addExerciseInput,
   addNoteInput,
   cancelWorkoutInput,
+  createExerciseInput,
   finishWorkoutInput,
   insightsInput,
   listWorkoutsInput,
@@ -22,6 +23,7 @@ import type {
  */
 export type ListWorkoutsInput = z.infer<typeof listWorkoutsInput>;
 export type SearchExercisesInput = z.infer<typeof searchExercisesInput>;
+export type CreateExerciseInput = z.infer<typeof createExerciseInput>;
 export type InsightsInput = z.infer<typeof insightsInput>;
 export type StartWorkoutInput = z.infer<typeof startWorkoutInput>;
 export type ProposePlanInput = z.infer<typeof proposePlanInput>;

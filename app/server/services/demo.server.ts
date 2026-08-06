@@ -5,6 +5,7 @@ import {
   workout,
   workoutExercise,
   workoutSet,
+  type MuscleGroup,
 } from "~/db/schema";
 
 import { newId } from "./ids";
@@ -14,7 +15,9 @@ const DAY_MS = 86_400_000;
 /**
  * A four-day rotation, so eight weeks of generated history produces the muscle
  * group imbalances and progression that make the insights page worth looking at.
- * Exercise ids are the catalog slugs (see scripts/gen-seed.mjs).
+ * The exercises are created for the demo user as part of seeding, the same way
+ * a real person's library is built from what they train — there is no shared
+ * catalog to draw on.
  */
 const ROTATION: Array<{
   title: string;
@@ -121,26 +124,152 @@ const ROTATION: Array<{
  * Deliberately deterministic apart from the start time: reproducible demos are
  * easier to talk about than randomised ones.
  */
+/**
+ * The movements the rotation above uses.
+ *
+ * Created per demo user rather than read from a catalog, because there is no
+ * catalog: an exercise belongs to the person who trains it. The muscle
+ * attribution is what makes the insights page worth looking at, so it is set
+ * deliberately rather than defaulted.
+ */
+const DEMO_EXERCISES: Array<{
+  slug: string;
+  name: string;
+  primaryMuscle: MuscleGroup;
+  secondaryMuscles: MuscleGroup[];
+  equipment: string;
+}> = [
+  {
+    slug: "barbell-bench-press",
+    name: "Barbell Bench Press",
+    primaryMuscle: "chest",
+    secondaryMuscles: ["triceps", "shoulders"],
+    equipment: "barbell",
+  },
+  {
+    slug: "incline-dumbbell-press",
+    name: "Incline Dumbbell Press",
+    primaryMuscle: "chest",
+    secondaryMuscles: ["shoulders", "triceps"],
+    equipment: "dumbbell",
+  },
+  {
+    slug: "overhead-press",
+    name: "Overhead Press",
+    primaryMuscle: "shoulders",
+    secondaryMuscles: ["triceps", "core"],
+    equipment: "barbell",
+  },
+  {
+    slug: "triceps-pushdown",
+    name: "Triceps Pushdown",
+    primaryMuscle: "triceps",
+    secondaryMuscles: [],
+    equipment: "cable",
+  },
+  {
+    slug: "back-squat",
+    name: "Back Squat",
+    primaryMuscle: "quads",
+    secondaryMuscles: ["glutes", "hamstrings", "core"],
+    equipment: "barbell",
+  },
+  {
+    slug: "romanian-deadlift",
+    name: "Romanian Deadlift",
+    primaryMuscle: "hamstrings",
+    secondaryMuscles: ["glutes", "back"],
+    equipment: "barbell",
+  },
+  {
+    slug: "leg-press",
+    name: "Leg Press",
+    primaryMuscle: "quads",
+    secondaryMuscles: ["glutes"],
+    equipment: "machine",
+  },
+  {
+    slug: "standing-calf-raise",
+    name: "Standing Calf Raise",
+    primaryMuscle: "calves",
+    secondaryMuscles: [],
+    equipment: "machine",
+  },
+  {
+    slug: "barbell-row",
+    name: "Barbell Row",
+    primaryMuscle: "back",
+    secondaryMuscles: ["biceps"],
+    equipment: "barbell",
+  },
+  {
+    slug: "lat-pulldown",
+    name: "Lat Pulldown",
+    primaryMuscle: "back",
+    secondaryMuscles: ["biceps"],
+    equipment: "cable",
+  },
+  {
+    slug: "face-pull",
+    name: "Face Pull",
+    primaryMuscle: "back",
+    secondaryMuscles: ["shoulders"],
+    equipment: "cable",
+  },
+  {
+    slug: "barbell-curl",
+    name: "Barbell Curl",
+    primaryMuscle: "biceps",
+    secondaryMuscles: [],
+    equipment: "barbell",
+  },
+  {
+    slug: "deadlift",
+    name: "Deadlift",
+    primaryMuscle: "back",
+    secondaryMuscles: ["hamstrings", "glutes", "core"],
+    equipment: "barbell",
+  },
+  {
+    slug: "goblet-squat",
+    name: "Goblet Squat",
+    primaryMuscle: "quads",
+    secondaryMuscles: ["glutes", "core"],
+    equipment: "dumbbell",
+  },
+  {
+    slug: "plank",
+    name: "Plank",
+    primaryMuscle: "core",
+    secondaryMuscles: [],
+    equipment: "bodyweight",
+  },
+];
+
 export async function seedDemoData(
   db: Database,
   userId: string,
   now = Date.now(),
 ): Promise<void> {
-  // Only seed exercises the catalog actually has, so a trimmed catalog
-  // degrades to fewer exercises rather than a foreign-key failure.
-  const catalog = await db.select({ id: exercise.id }).from(exercise);
-  const known = new Set(catalog.map((row) => row.id));
-
-  const available = ROTATION.flatMap((day) => day.entries).filter((entry) =>
-    known.has(entry.exerciseId),
-  );
-  if (available.length === 0) {
-    // Otherwise the demo silently produces a history of empty workouts, which
-    // looks like a broken app rather than a missing seed step.
-    throw new Error(
-      "Cannot seed demo data: the exercise catalog is empty. Run `npm run db:seed:local` (or db:seed:remote) first.",
-    );
-  }
+  // Build this person's library first; the history below is recorded against
+  // it. Ids are generated per user, so the rotation's slugs are mapped to them.
+  const exerciseIds = new Map<string, string>();
+  const exerciseRows = DEMO_EXERCISES.map((definition) => {
+    const id = newId();
+    exerciseIds.set(definition.slug, id);
+    return {
+      id,
+      slug: definition.slug,
+      name: definition.name,
+      primaryMuscle: definition.primaryMuscle,
+      secondaryMuscles: definition.secondaryMuscles,
+      equipment: definition.equipment,
+      modality: "strength" as const,
+      isUnilateral: false,
+      createdBy: userId,
+      createdAt: new Date(now),
+    };
+  });
 
   const profileValues = {
     isDemo: true,
@@ -151,6 +280,8 @@ export async function seedDemoData(
   };
 
   const statements: { run: () => unknown }[] = [
+    // Must precede the history below: workout_exercise references these rows.
+    db.insert(exercise).values(exerciseRows),
     // Upsert, not update: the profile row is normally created lazily on the
     // first authenticated request, which has not happened yet at this point.
     // An UPDATE here would silently match zero rows and leave `isDemo` false,
@@ -179,7 +310,7 @@ export async function seedDemoData(
       sessionIndex += 1;
 
       const entries = day.entries.filter((entry) =>
-        known.has(entry.exerciseId),
+        exerciseIds.has(entry.exerciseId),
       );
       // A rotation day whose exercises are all absent from the catalog is
       // skipped outright — never persisted as a workout with nothing in it.
@@ -213,7 +344,7 @@ export async function seedDemoData(
           db.insert(workoutExercise).values({
             id: workoutExerciseId,
             workoutId,
-            exerciseId: entry.exerciseId,
+            exerciseId: exerciseIds.get(entry.exerciseId)!,
             position,
             targetSets: entry.sets,
             targetReps: entry.reps,
