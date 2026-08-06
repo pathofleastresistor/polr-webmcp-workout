@@ -16,7 +16,7 @@ import type { Route } from "./+types/demo.start";
  * it exists only because Better Auth needs a credential to mint a session.
  */
 export async function action({ request, context }: Route.ActionArgs) {
-  const { auth, db, config, env } = getAppContext(context);
+  const { auth, db, config } = getAppContext(context);
 
   // Fails closed. When DEMO_MODE is unset this route does not exist at all,
   // which is the behaviour a real deployment must have.
@@ -26,7 +26,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 
   // Each call creates a user and writes ~100 rows, so it is worth bounding even
   // though the accounts are disposable.
-  await enforceRateLimit(env, "AUTH_RATE_LIMIT", rateLimitKey(request, null));
+  await enforceRateLimit("AUTH_RATE_LIMIT", rateLimitKey(request, null));
 
   const handle = crypto.randomUUID().slice(0, 8);
 
