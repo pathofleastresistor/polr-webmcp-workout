@@ -12,10 +12,10 @@ const THIRTY_DAYS_SECONDS = 60 * 60 * 24 * 30;
 const ONE_DAY_SECONDS = 60 * 60 * 24;
 
 /**
- * Better Auth instance backed by D1.
+ * Better Auth instance backed by the application's SQLite database.
  *
- * Built per request because the D1 binding is request-scoped. Better Auth
- * construction is cheap (no connections to open) so this is not a hot path.
+ * Built once and held on the app context; construction is cheap, and it shares
+ * the one connection rather than opening its own.
  */
 export function createAuth(db: Database, config: AppConfig) {
   return betterAuth({
@@ -26,9 +26,10 @@ export function createAuth(db: Database, config: AppConfig) {
 
     database: drizzleAdapter(db, {
       provider: "sqlite",
-      // D1 has no interactive transactions; the adapter must issue statements
-      // sequentially rather than wrapping them in BEGIN/COMMIT.
-      transaction: false,
+      // Transactions are left on. Under D1 they had to be disabled — it had no
+      // interactive transactions — which meant a failure partway through
+      // sign-up could leave a user row with no matching account. SQLite wraps
+      // it in BEGIN/COMMIT properly.
       schema: { user, session, account, verification },
     }),
 

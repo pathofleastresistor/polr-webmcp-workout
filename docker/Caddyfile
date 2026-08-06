@@ -3,7 +3,7 @@
 # WebMCP is a secure-context API, and on plain http the browser will not expose
 # document.modelContext at all.
 {$SPOTTER_DOMAIN} {
-	reverse_proxy spotter:8787 {
+	reverse_proxy spotter:3000 {
 		# Caddy sets X-Forwarded-For to the address it actually observed,
 		# appending to anything the client sent. The app reads the rightmost
 		# entry (see app/server/rate-limit.server.ts), so per-client rate

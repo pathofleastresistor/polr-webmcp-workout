@@ -1,19 +1,17 @@
-import type { D1Migration } from "@cloudflare/vitest-pool-workers";
-import { applyD1Migrations, env } from "cloudflare:test";
 import { beforeAll } from "vitest";
 
 /**
- * Applies the real migrations to the test D1 instance before anything runs, so
- * tests exercise the same schema — indexes, constraints and all — that
- * production does. The migration list is injected as a binding by
- * vitest.config.ts, since this file runs inside workerd with no filesystem.
+ * Configuration the app reads at import time.
  *
- * Narrowed here rather than declared on `Cloudflare.Env`: the binding exists
- * only under test, and augmenting the global interface would advertise it to
- * application code as though production had it too.
+ * Set before anything else so `readConfig` sees a complete environment: the
+ * database is in memory and private to this worker, so a test can never write
+ * to a real one by forgetting to point it somewhere.
  */
-const testEnv = env as typeof env & { TEST_MIGRATIONS: D1Migration[] };
-
-beforeAll(async () => {
-  await applyD1Migrations(testEnv.DB, testEnv.TEST_MIGRATIONS);
+beforeAll(() => {
+  process.env.APP_URL ??= "https://spotter.example";
+  process.env.BETTER_AUTH_SECRET ??=
+    "test-secret-at-least-32-characters-long!!";
+  process.env.GOOGLE_CLIENT_ID ??= "test-client-id";
+  process.env.GOOGLE_CLIENT_SECRET ??= "test-client-secret";
+  process.env.DATABASE_PATH ??= ":memory:";
 });

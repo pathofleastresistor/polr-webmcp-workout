@@ -1,5 +1,3 @@
-import type { BatchItem } from "drizzle-orm/batch";
-
 import type { Database } from "~/db";
 import {
   exercise,
@@ -152,7 +150,7 @@ export async function seedDemoData(
     updatedAt: new Date(now),
   };
 
-  const statements: BatchItem<"sqlite">[] = [
+  const statements: { run: () => unknown }[] = [
     // Upsert, not update: the profile row is normally created lazily on the
     // first authenticated request, which has not happened yet at this point.
     // An UPDATE here would silently match zero rows and leave `isDemo` false,
@@ -254,12 +252,10 @@ export async function seedDemoData(
     }
   }
 
-  // D1 caps how much one batch may carry, so this is chunked rather than sent
-  // as a single statement list.
-  const CHUNK = 40;
-  for (let i = 0; i < statements.length; i += CHUNK) {
-    const chunk = statements.slice(i, i + CHUNK);
-    if (chunk.length === 0) continue;
-    await db.batch(chunk as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
-  }
+  // Previously chunked, because D1 capped how much one batch could carry. A
+  // local transaction has no such limit, so the whole seed lands atomically:
+  // a visitor never sees a half-populated history.
+  db.transaction(() => {
+    for (const statement of statements) statement.run();
+  });
 }
