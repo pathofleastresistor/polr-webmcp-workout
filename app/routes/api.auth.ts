@@ -10,11 +10,11 @@ import type { Route } from "./+types/api.auth";
  * reimplemented here.
  */
 async function handle({ request, context }: Route.LoaderArgs) {
-  const { auth, env } = getAppContext(context);
+  const { auth } = getAppContext(context);
 
   // Unauthenticated endpoint reachable before a session exists, so the limiter
   // keys on IP. Guards the callback against credential-stuffing style replay.
-  await enforceRateLimit(env, "AUTH_RATE_LIMIT", rateLimitKey(request, null));
+  await enforceRateLimit("AUTH_RATE_LIMIT", rateLimitKey(request, null));
 
   return auth.handler(request);
 }

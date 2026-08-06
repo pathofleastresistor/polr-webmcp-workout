@@ -54,14 +54,10 @@ export async function handleApiRequest<TSchema extends z.ZodType, TResult>(
   options: HandlerOptions<TSchema, TResult>,
 ): Promise<Response> {
   try {
-    const { db, env } = getAppContext(context);
+    const { db } = getAppContext(context);
     const user = await requireUser(request, context);
 
-    await enforceRateLimit(
-      env,
-      "TOOL_RATE_LIMIT",
-      rateLimitKey(request, user.id),
-    );
+    await enforceRateLimit("TOOL_RATE_LIMIT", rateLimitKey(request, user.id));
 
     const raw = await readInput(request);
     const parsed = options.schema.safeParse(raw);

@@ -29,21 +29,6 @@
     },
   ],
 
-  // Per-user throttling for agent-driven tool traffic. See app/server/rate-limit.ts,
-  // which degrades to a permissive no-op when the binding is absent (e.g. local dev).
-  "ratelimits": [
-    {
-      "name": "TOOL_RATE_LIMIT",
-      "namespace_id": "1001",
-      "simple": { "limit": 120, "period": 60 },
-    },
-    {
-      "name": "AUTH_RATE_LIMIT",
-      "namespace_id": "1002",
-      "simple": { "limit": 20, "period": 60 },
-    },
-  ],
-
   "vars": {
     // Public origin of the deployment. Used for OAuth redirect URLs and for
     // rejecting cross-origin state-changing requests. Override per environment.
