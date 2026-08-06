@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch makes an in-flight run redundant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Regenerates route types and worker-configuration.d.ts, then typechecks.
+      # Both are gitignored build products, so this must run before lint.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      # Runs inside workerd against a real local D1. Needs no secrets: the test
+      # bindings are supplied by vitest.config.ts.
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      # The seed file is generated; a drifted checked-in copy would mean the
+      # catalog applied to production is not the one in scripts/gen-seed.mjs.
+      - name: Verify generated seed is up to date
+        run: |
+          node scripts/gen-seed.mjs
+          git diff --exit-code drizzle/seed/exercises.sql

@@ -1,0 +1,16 @@
+# Copy to `.dev.vars` for local development. `.dev.vars` is gitignored.
+#
+# In production these are set as Worker secrets instead:
+#   wrangler secret put BETTER_AUTH_SECRET
+#   wrangler secret put GOOGLE_CLIENT_ID
+#   wrangler secret put GOOGLE_CLIENT_SECRET
+
+# Signs session cookies and OAuth state. Must be at least 32 characters.
+# Generate one with: openssl rand -base64 32
+BETTER_AUTH_SECRET=replace-me-with-at-least-32-random-characters
+
+# Google OAuth 2.0 web client credentials.
+# Create at https://console.cloud.google.com/apis/credentials and add
+# http://localhost:5173/api/auth/callback/google as an authorised redirect URI.
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret

@@ -1,0 +1,128 @@
+import { env } from "cloudflare:test";
+
+import { createDatabase, type Database } from "~/db";
+import { exercise, user, userProfile } from "~/db/schema";
+import type { MUSCLE_GROUPS } from "~/db/schema";
+import type { UserProfile } from "~/db/schema";
+
+export function testDb(): Database {
+  return createDatabase(env.DB);
+}
+
+let counter = 0;
+
+/** Creates a user with a profile, mirroring what the session layer does. */
+export async function createUser(
+  db: Database,
+  overrides: Partial<UserProfile> = {},
+): Promise<{ id: string; profile: UserProfile }> {
+  const id = `user-${++counter}-${crypto.randomUUID().slice(0, 8)}`;
+
+  await db.insert(user).values({
+    id,
+    name: `Test User ${counter}`,
+    email: `test-${id}@example.com`,
+    emailVerified: true,
+  });
+
+  const [profile] = await db
+    .insert(userProfile)
+    .values({ userId: id, ...overrides })
+    .returning();
+
+  return { id, profile: profile! };
+}
+
+/** Inserts the handful of catalog rows the tests reference by id. */
+export async function seedExercises(db: Database): Promise<void> {
+  await db
+    .insert(exercise)
+    .values([
+      {
+        id: "bench-press",
+        slug: "bench-press",
+        name: "Bench Press",
+        primaryMuscle: "chest",
+        secondaryMuscles: ["triceps"],
+        equipment: "barbell",
+      },
+      {
+        id: "back-squat",
+        slug: "back-squat",
+        name: "Back Squat",
+        primaryMuscle: "quads",
+        secondaryMuscles: ["glutes"],
+        equipment: "barbell",
+      },
+      {
+        id: "pull-up",
+        slug: "pull-up",
+        name: "Pull-Up",
+        primaryMuscle: "back",
+        secondaryMuscles: ["biceps"],
+        equipment: "bodyweight",
+      },
+      // Two rows whose names differ only by case, to prove that name
+      // resolution rejects ambiguity instead of guessing.
+      {
+        id: "row-a",
+        slug: "row-a",
+        name: "Row",
+        primaryMuscle: "back",
+        secondaryMuscles: [],
+        equipment: "barbell",
+      },
+      {
+        id: "row-b",
+        slug: "row-b",
+        name: "row",
+        primaryMuscle: "back",
+        secondaryMuscles: [],
+        equipment: "cable",
+      },
+    ])
+    .onConflictDoNothing();
+}
+
+/**
+ * The catalog rows the demo rotation references. Seeded separately from the
+ * small fixture set so demo tests exercise realistic sessions rather than the
+ * degraded "exercise missing" path.
+ */
+export async function seedDemoCatalog(db: Database): Promise<void> {
+  const rows: Array<[string, string, string]> = [
+    ["barbell-bench-press", "Barbell Bench Press", "chest"],
+    ["overhead-press", "Overhead Press", "shoulders"],
+    ["incline-dumbbell-press", "Incline Dumbbell Press", "chest"],
+    ["triceps-pushdown", "Triceps Pushdown", "triceps"],
+    ["back-squat", "Back Squat", "quads"],
+    ["romanian-deadlift", "Romanian Deadlift", "hamstrings"],
+    ["leg-press", "Leg Press", "quads"],
+    ["standing-calf-raise", "Standing Calf Raise", "calves"],
+    ["barbell-row", "Barbell Row", "back"],
+    ["lat-pulldown", "Lat Pulldown", "back"],
+    ["face-pull", "Face Pull", "back"],
+    ["barbell-curl", "Barbell Curl", "biceps"],
+    ["deadlift", "Deadlift", "back"],
+    ["goblet-squat", "Goblet Squat", "quads"],
+    ["plank", "Plank", "core"],
+  ];
+
+  const values = rows.map(([id, name, primaryMuscle]) => ({
+    id: id!,
+    slug: id!,
+    name: name!,
+    primaryMuscle: primaryMuscle as (typeof MUSCLE_GROUPS)[number],
+    secondaryMuscles: [],
+    equipment: "barbell",
+  }));
+
+  // D1 caps bound parameters per statement at 100, and each row binds 8.
+  const CHUNK = 10;
+  for (let i = 0; i < values.length; i += CHUNK) {
+    await db
+      .insert(exercise)
+      .values(values.slice(i, i + CHUNK))
+      .onConflictDoNothing();
+  }
+}

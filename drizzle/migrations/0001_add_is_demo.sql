@@ -1,0 +1,1 @@
+ALTER TABLE `user_profile` ADD `is_demo` integer DEFAULT false NOT NULL;

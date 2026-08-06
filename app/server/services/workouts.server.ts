@@ -1,0 +1,739 @@
+import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
+
+import type { Database } from "~/db";
+import {
+  exercise,
+  workout,
+  workoutExercise,
+  workoutSet,
+  type Actor,
+} from "~/db/schema";
+import type {
+  AddExerciseInput,
+  CancelWorkoutInput,
+  FinishWorkoutInput,
+  ListWorkoutsInput,
+  LogSetInput,
+  PlannedExercise,
+  ProposePlanInput,
+  RemoveExerciseInput,
+  StartWorkoutInput,
+} from "./service-inputs";
+import type {
+  ExerciseView,
+  SetView,
+  WorkoutDetailView,
+  WorkoutExerciseView,
+  WorkoutSummaryView,
+} from "~/domain/types";
+
+import { conflict, invalid, notFound } from "./errors";
+import { newId } from "./ids";
+
+type BatchStatement = BatchItem<"sqlite">;
+
+/**
+ * Runs a set of statements as one D1 batch.
+ *
+ * D1 exposes no interactive transactions, so `batch` is the only way to make a
+ * multi-statement write all-or-nothing. Drizzle types the argument as a
+ * non-empty tuple; this narrows a dynamically built array to that shape and
+ * skips the round trip entirely when there is nothing to do.
+ */
+async function runBatch(db: Database, statements: BatchStatement[]) {
+  if (statements.length === 0) return;
+  await db.batch(statements as [BatchStatement, ...BatchStatement[]]);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Reads                                                                      */
+/* -------------------------------------------------------------------------- */
+
+export async function listWorkouts(
+  db: Database,
+  userId: string,
+  input: ListWorkoutsInput,
+): Promise<WorkoutSummaryView[]> {
+  const filters = [eq(workout.userId, userId)];
+
+  if (input.status !== "any") {
+    filters.push(eq(workout.status, input.status));
+  }
+  if (input.since) {
+    // `since` is a calendar date; include the whole day in the user's frame of
+    // reference by starting at midnight UTC.
+    filters.push(gte(workout.startedAt, new Date(`${input.since}T00:00:00Z`)));
+  }
+
+  const rows = await db.query.workout.findMany({
+    where: and(...filters),
+    orderBy: desc(workout.startedAt),
+    limit: input.limit,
+    with: {
+      exercises: {
+        with: { sets: true, exercise: true },
+      },
+    },
+  });
+
+  return rows.map((row) => toSummaryView(row));
+}
+
+export async function getWorkoutDetail(
+  db: Database,
+  userId: string,
+  workoutId: string,
+): Promise<WorkoutDetailView> {
+  const row = await findWorkoutWithChildren(db, userId, workoutId);
+  if (!row) throw notFound("Workout");
+  return toDetailView(row);
+}
+
+export async function getActiveWorkout(
+  db: Database,
+  userId: string,
+): Promise<WorkoutDetailView | null> {
+  const row = await db.query.workout.findFirst({
+    where: and(eq(workout.userId, userId), eq(workout.status, "active")),
+    orderBy: desc(workout.startedAt),
+    with: {
+      exercises: {
+        orderBy: asc(workoutExercise.position),
+        with: { sets: { orderBy: asc(workoutSet.setIndex) }, exercise: true },
+      },
+    },
+  });
+
+  return row ? toDetailView(row) : null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Lifecycle                                                                  */
+/* -------------------------------------------------------------------------- */
+
+export async function startWorkout(
+  db: Database,
+  userId: string,
+  input: StartWorkoutInput,
+  actor: Actor,
+): Promise<WorkoutDetailView> {
+  // One session at a time. Returning the existing session rather than erroring
+  // would let an agent silently log into the wrong workout.
+  const existing = await getActiveWorkout(db, userId);
+  if (existing) {
+    throw conflict(
+      "workout_already_active",
+      `A workout ("${existing.title}") is already in progress. Finish it with finish_workout or discard it with cancel_workout before starting another.`,
+    );
+  }
+
+  const now = new Date();
+  const id = newId();
+
+  await db.insert(workout).values({
+    id,
+    userId,
+    title: input.title?.trim() || defaultTitle(now),
+    status: "active",
+    notes: input.notes?.trim() || null,
+    startedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  void actor;
+  return getWorkoutDetail(db, userId, id);
+}
+
+/**
+ * Replaces the workout's plan wholesale.
+ *
+ * This is the "agent suggests a workout" path. It refuses to run once any set
+ * has been logged, so a suggestion can never silently discard work the person
+ * already did.
+ */
+export async function replacePlan(
+  db: Database,
+  userId: string,
+  input: ProposePlanInput,
+  actor: Actor,
+): Promise<WorkoutDetailView> {
+  const existing = await requireEditableWorkout(db, userId, input.workoutId);
+
+  const loggedSets = existing.exercises
+    .flatMap((entry) => entry.sets)
+    .filter((set) => set.status !== "pending");
+
+  if (loggedSets.length > 0) {
+    throw conflict(
+      "workout_already_started",
+      `${loggedSets.length} set(s) have already been logged in this workout, so the plan cannot be replaced. Use add_exercise_to_workout to extend it instead.`,
+    );
+  }
+
+  const resolved = await resolvePlannedExercises(db, userId, input.exercises);
+
+  const now = new Date();
+  const statements: BatchStatement[] = [
+    db
+      .delete(workoutExercise)
+      .where(eq(workoutExercise.workoutId, existing.id)),
+    db
+      .update(workout)
+      .set({
+        title: input.title?.trim() || existing.title,
+        notes: input.notes?.trim() ?? existing.notes,
+        plannedBy: actor,
+        updatedAt: now,
+      })
+      .where(eq(workout.id, existing.id)),
+  ];
+
+  resolved.forEach((entry, index) => {
+    const workoutExerciseId = newId();
+    statements.push(
+      db.insert(workoutExercise).values({
+        id: workoutExerciseId,
+        workoutId: existing.id,
+        exerciseId: entry.exercise.id,
+        position: index,
+        targetSets: entry.plan.sets.length,
+        targetReps: entry.plan.sets[0]?.reps ?? null,
+        targetWeightKg: entry.plan.sets[0]?.weightKg ?? null,
+        rationale: entry.plan.rationale?.trim() || null,
+        createdAt: now,
+      }),
+    );
+
+    entry.plan.sets.forEach((set, setIndex) => {
+      statements.push(
+        db.insert(workoutSet).values({
+          id: newId(),
+          workoutExerciseId,
+          setIndex: setIndex + 1,
+          reps: set.reps ?? null,
+          weightKg: set.weightKg ?? null,
+          rpe: set.rpe ?? null,
+          durationSeconds: set.durationSeconds ?? null,
+          distanceMeters: set.distanceMeters ?? null,
+          isWarmup: set.isWarmup,
+          status: "pending",
+          createdAt: now,
+        }),
+      );
+    });
+  });
+
+  // D1 has no interactive transactions; `batch` runs the statements as one
+  // atomic unit, which is what keeps a half-written plan off the page.
+  await runBatch(db, statements);
+
+  return getWorkoutDetail(db, userId, existing.id);
+}
+
+export async function addExerciseToWorkout(
+  db: Database,
+  userId: string,
+  input: AddExerciseInput,
+): Promise<WorkoutDetailView> {
+  const existing = await requireEditableWorkout(db, userId, input.workoutId);
+
+  if (existing.exercises.length >= 30) {
+    throw conflict(
+      "workout_too_large",
+      "This workout already has 30 exercises, which is the maximum.",
+    );
+  }
+
+  const [resolved] = await resolvePlannedExercises(db, userId, [
+    {
+      exerciseId: input.exerciseId,
+      exerciseName: input.exerciseName,
+      sets: input.sets,
+      rationale: input.rationale,
+    },
+  ]);
+  if (!resolved) throw invalid("unresolved_exercise", "No exercise resolved.");
+
+  const now = new Date();
+  const insertAt = Math.min(
+    input.position ?? existing.exercises.length,
+    existing.exercises.length,
+  );
+
+  const statements: BatchStatement[] = [];
+
+  // Shift positions from the tail backwards so the unique (workout, position)
+  // index never sees a duplicate mid-batch.
+  for (let i = existing.exercises.length - 1; i >= insertAt; i--) {
+    const entry = existing.exercises[i]!;
+    statements.push(
+      db
+        .update(workoutExercise)
+        .set({ position: i + 1 })
+        .where(eq(workoutExercise.id, entry.id)),
+    );
+  }
+
+  const workoutExerciseId = newId();
+  statements.push(
+    db.insert(workoutExercise).values({
+      id: workoutExerciseId,
+      workoutId: existing.id,
+      exerciseId: resolved.exercise.id,
+      position: insertAt,
+      targetSets: resolved.plan.sets.length,
+      targetReps: resolved.plan.sets[0]?.reps ?? null,
+      targetWeightKg: resolved.plan.sets[0]?.weightKg ?? null,
+      rationale: resolved.plan.rationale?.trim() || null,
+      createdAt: now,
+    }),
+  );
+
+  resolved.plan.sets.forEach((set, setIndex) => {
+    statements.push(
+      db.insert(workoutSet).values({
+        id: newId(),
+        workoutExerciseId,
+        setIndex: setIndex + 1,
+        reps: set.reps ?? null,
+        weightKg: set.weightKg ?? null,
+        rpe: set.rpe ?? null,
+        durationSeconds: set.durationSeconds ?? null,
+        distanceMeters: set.distanceMeters ?? null,
+        isWarmup: set.isWarmup,
+        status: "pending",
+        createdAt: now,
+      }),
+    );
+  });
+
+  statements.push(
+    db
+      .update(workout)
+      .set({ updatedAt: now })
+      .where(eq(workout.id, existing.id)),
+  );
+
+  await runBatch(db, statements);
+  return getWorkoutDetail(db, userId, existing.id);
+}
+
+export async function removeExerciseFromWorkout(
+  db: Database,
+  userId: string,
+  input: RemoveExerciseInput,
+): Promise<WorkoutDetailView> {
+  const existing = await requireEditableWorkout(db, userId, input.workoutId);
+
+  const target = existing.exercises.find(
+    (entry) => entry.id === input.workoutExerciseId,
+  );
+  if (!target) throw notFound("Exercise in this workout");
+
+  const now = new Date();
+  const statements: BatchStatement[] = [
+    db.delete(workoutExercise).where(eq(workoutExercise.id, target.id)),
+  ];
+
+  // Close the positional gap, front to back.
+  existing.exercises
+    .filter((entry) => entry.position > target.position)
+    .forEach((entry) => {
+      statements.push(
+        db
+          .update(workoutExercise)
+          .set({ position: entry.position - 1 })
+          .where(eq(workoutExercise.id, entry.id)),
+      );
+    });
+
+  statements.push(
+    db
+      .update(workout)
+      .set({ updatedAt: now })
+      .where(eq(workout.id, existing.id)),
+  );
+
+  await runBatch(db, statements);
+  return getWorkoutDetail(db, userId, existing.id);
+}
+
+/**
+ * Records the result of a single set.
+ *
+ * Upserts on (exercise, setIndex): a planned set is filled in, and a set beyond
+ * the plan is appended. That lets the person do an extra set without the agent
+ * having to re-plan, which is the common case in a real session.
+ */
+export async function logSet(
+  db: Database,
+  userId: string,
+  input: LogSetInput,
+  actor: Actor,
+): Promise<WorkoutDetailView> {
+  const existing = await requireEditableWorkout(db, userId, input.workoutId);
+
+  const entry = existing.exercises.find(
+    (candidate) => candidate.id === input.workoutExerciseId,
+  );
+  if (!entry) throw notFound("Exercise in this workout");
+
+  const maxIndex = entry.sets.reduce(
+    (max, set) => Math.max(max, set.setIndex),
+    0,
+  );
+  if (input.setIndex > maxIndex + 1) {
+    throw invalid(
+      "set_index_out_of_range",
+      `Set ${input.setIndex} skips ahead: this exercise has ${maxIndex} set(s), so the next one to log is ${maxIndex + 1}.`,
+    );
+  }
+
+  const target = entry.sets.find((set) => set.setIndex === input.setIndex);
+  const now = new Date();
+
+  const values = {
+    reps: input.reps ?? target?.reps ?? null,
+    weightKg: input.weightKg ?? target?.weightKg ?? null,
+    rpe: input.rpe ?? target?.rpe ?? null,
+    durationSeconds: input.durationSeconds ?? target?.durationSeconds ?? null,
+    distanceMeters: input.distanceMeters ?? target?.distanceMeters ?? null,
+    status: input.status,
+    loggedBy: actor,
+    completedAt: input.status === "completed" ? now : null,
+  };
+
+  if (target) {
+    await db.update(workoutSet).set(values).where(eq(workoutSet.id, target.id));
+  } else {
+    await db.insert(workoutSet).values({
+      id: newId(),
+      workoutExerciseId: entry.id,
+      setIndex: input.setIndex,
+      isWarmup: false,
+      createdAt: now,
+      ...values,
+    });
+  }
+
+  await db
+    .update(workout)
+    .set({ updatedAt: now })
+    .where(eq(workout.id, existing.id));
+
+  return getWorkoutDetail(db, userId, existing.id);
+}
+
+export async function appendNote(
+  db: Database,
+  userId: string,
+  workoutId: string,
+  note: string,
+): Promise<WorkoutDetailView> {
+  const existing = await requireEditableWorkout(db, userId, workoutId);
+  const trimmed = note.trim();
+
+  const combined = existing.notes ? `${existing.notes}\n${trimmed}` : trimmed;
+  // Bound total note length so an agent loop cannot grow the row without limit.
+  const bounded = combined.slice(-4000);
+
+  await db
+    .update(workout)
+    .set({ notes: bounded, updatedAt: new Date() })
+    .where(eq(workout.id, existing.id));
+
+  return getWorkoutDetail(db, userId, existing.id);
+}
+
+export async function finishWorkout(
+  db: Database,
+  userId: string,
+  input: FinishWorkoutInput,
+): Promise<WorkoutDetailView> {
+  const existing = await requireEditableWorkout(db, userId, input.workoutId);
+
+  const now = new Date();
+  const notes = input.notes?.trim()
+    ? existing.notes
+      ? `${existing.notes}\n${input.notes.trim()}`
+      : input.notes.trim()
+    : existing.notes;
+
+  await db.batch([
+    // Anything still pending when the session ends was not performed.
+    db
+      .update(workoutSet)
+      .set({ status: "skipped" })
+      .where(
+        and(
+          eq(workoutSet.status, "pending"),
+          inArray(
+            workoutSet.workoutExerciseId,
+            existing.exercises.map((entry) => entry.id),
+          ),
+        ),
+      ),
+    db
+      .update(workout)
+      .set({
+        status: "completed",
+        completedAt: now,
+        updatedAt: now,
+        notes: notes ?? null,
+      })
+      .where(eq(workout.id, existing.id)),
+  ]);
+
+  return getWorkoutDetail(db, userId, existing.id);
+}
+
+export async function cancelWorkout(
+  db: Database,
+  userId: string,
+  input: CancelWorkoutInput,
+): Promise<WorkoutDetailView> {
+  const existing = await requireEditableWorkout(db, userId, input.workoutId);
+
+  const now = new Date();
+  const notes = input.reason?.trim()
+    ? `${existing.notes ? `${existing.notes}\n` : ""}Discarded: ${input.reason.trim()}`
+    : existing.notes;
+
+  await db
+    .update(workout)
+    .set({
+      status: "abandoned",
+      completedAt: now,
+      updatedAt: now,
+      notes: notes ?? null,
+    })
+    .where(eq(workout.id, existing.id));
+
+  return getWorkoutDetail(db, userId, existing.id);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Internals                                                                  */
+/* -------------------------------------------------------------------------- */
+
+type WorkoutRow = NonNullable<
+  Awaited<ReturnType<typeof findWorkoutWithChildren>>
+>;
+
+function findWorkoutWithChildren(
+  db: Database,
+  userId: string,
+  workoutId: string,
+) {
+  return db.query.workout.findFirst({
+    // Scoping by userId here is the authorization check: a workout belonging to
+    // someone else is indistinguishable from one that does not exist.
+    where: and(eq(workout.id, workoutId), eq(workout.userId, userId)),
+    with: {
+      exercises: {
+        orderBy: asc(workoutExercise.position),
+        with: { sets: { orderBy: asc(workoutSet.setIndex) }, exercise: true },
+      },
+    },
+  });
+}
+
+async function requireEditableWorkout(
+  db: Database,
+  userId: string,
+  workoutId: string,
+) {
+  const row = await findWorkoutWithChildren(db, userId, workoutId);
+  if (!row) throw notFound("Workout");
+
+  if (row.status !== "active") {
+    throw conflict(
+      "workout_not_active",
+      `This workout is ${row.status} and can no longer be modified. Start a new one with start_workout.`,
+    );
+  }
+
+  return row;
+}
+
+interface ResolvedExercise {
+  exercise: typeof exercise.$inferSelect;
+  plan: PlannedExercise;
+}
+
+/**
+ * Maps planned entries onto catalog rows.
+ *
+ * Name matching is deliberately strict: an ambiguous name is an error rather
+ * than a guess, because silently picking the wrong exercise corrupts the
+ * training history the agent later reasons over.
+ */
+async function resolvePlannedExercises(
+  db: Database,
+  userId: string,
+  plans: PlannedExercise[],
+): Promise<ResolvedExercise[]> {
+  const results: ResolvedExercise[] = [];
+
+  for (const plan of plans) {
+    if (plan.exerciseId) {
+      const found = await db.query.exercise.findFirst({
+        where: and(eq(exercise.id, plan.exerciseId), visibleToUser(userId)),
+      });
+      if (!found) {
+        throw invalid(
+          "unknown_exercise",
+          `No exercise with id "${plan.exerciseId}". Use search_exercises to find valid ids.`,
+        );
+      }
+      results.push({ exercise: found, plan });
+      continue;
+    }
+
+    const name = plan.exerciseName?.trim();
+    if (!name) {
+      throw invalid(
+        "missing_exercise",
+        "Each planned exercise needs either exerciseId or exerciseName.",
+      );
+    }
+
+    const matches = await db
+      .select()
+      .from(exercise)
+      .where(
+        and(
+          sql`lower(${exercise.name}) = lower(${name})`,
+          visibleToUser(userId),
+        ),
+      )
+      .limit(2);
+
+    if (matches.length === 1) {
+      results.push({ exercise: matches[0]!, plan });
+      continue;
+    }
+
+    if (matches.length === 0) {
+      throw invalid(
+        "unknown_exercise",
+        `No exercise named "${name}". Call search_exercises to see what exists, then pass exerciseId.`,
+      );
+    }
+
+    throw invalid(
+      "ambiguous_exercise",
+      `"${name}" matches more than one exercise. Call search_exercises and pass an explicit exerciseId.`,
+    );
+  }
+
+  return results;
+}
+
+/** Shared library rows plus the caller's own custom exercises. */
+function visibleToUser(userId: string) {
+  return sql`(${exercise.createdBy} is null or ${exercise.createdBy} = ${userId})`;
+}
+
+function defaultTitle(now: Date): string {
+  const hour = now.getUTCHours();
+  if (hour < 11) return "Morning workout";
+  if (hour < 17) return "Afternoon workout";
+  return "Evening workout";
+}
+
+/* -------------------------------------------------------------------------- */
+/* View mapping                                                               */
+/* -------------------------------------------------------------------------- */
+
+export function toExerciseView(
+  row: typeof exercise.$inferSelect,
+): ExerciseView {
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    primaryMuscle: row.primaryMuscle,
+    secondaryMuscles: row.secondaryMuscles ?? [],
+    equipment: row.equipment,
+    modality: row.modality,
+    isCustom: row.createdBy !== null,
+  };
+}
+
+function toSetView(row: typeof workoutSet.$inferSelect): SetView {
+  return {
+    id: row.id,
+    setIndex: row.setIndex,
+    weightKg: row.weightKg,
+    reps: row.reps,
+    rpe: row.rpe,
+    durationSeconds: row.durationSeconds,
+    distanceMeters: row.distanceMeters,
+    isWarmup: row.isWarmup,
+    status: row.status,
+    loggedBy: row.loggedBy,
+    completedAt: row.completedAt?.toISOString() ?? null,
+  };
+}
+
+function toExerciseEntryView(
+  row: WorkoutRow["exercises"][number],
+): WorkoutExerciseView {
+  return {
+    id: row.id,
+    position: row.position,
+    exercise: toExerciseView(row.exercise),
+    targetSets: row.targetSets,
+    targetReps: row.targetReps,
+    targetWeightKg: row.targetWeightKg,
+    rationale: row.rationale,
+    sets: [...row.sets].sort((a, b) => a.setIndex - b.setIndex).map(toSetView),
+  };
+}
+
+/** Load actually performed: completed working sets only, warmups excluded. */
+export function computeVolumeKg(sets: SetView[]): number {
+  return sets.reduce((total, set) => {
+    if (set.status !== "completed" || set.isWarmup) return total;
+    if (set.weightKg === null || set.reps === null) return total;
+    return total + set.weightKg * set.reps;
+  }, 0);
+}
+
+function toSummaryView(row: WorkoutRow): WorkoutSummaryView {
+  const sets = row.exercises.flatMap((entry) => entry.sets.map(toSetView));
+  const durationMinutes = row.completedAt
+    ? Math.max(
+        0,
+        Math.round(
+          (row.completedAt.getTime() - row.startedAt.getTime()) / 60_000,
+        ),
+      )
+    : null;
+
+  return {
+    id: row.id,
+    title: row.title,
+    status: row.status,
+    plannedBy: row.plannedBy,
+    startedAt: row.startedAt.toISOString(),
+    completedAt: row.completedAt?.toISOString() ?? null,
+    exerciseCount: row.exercises.length,
+    completedSets: sets.filter((set) => set.status === "completed").length,
+    totalVolumeKg: Math.round(computeVolumeKg(sets)),
+    durationMinutes,
+  };
+}
+
+function toDetailView(row: WorkoutRow): WorkoutDetailView {
+  return {
+    ...toSummaryView(row),
+    notes: row.notes,
+    exercises: [...row.exercises]
+      .sort((a, b) => a.position - b.position)
+      .map(toExerciseEntryView),
+  };
+}
