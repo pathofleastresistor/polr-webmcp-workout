@@ -46,10 +46,3 @@ jobs:
 
       - name: Build
         run: npm run build
-
-      # The seed file is generated; a drifted checked-in copy would mean the
-      # catalog applied to production is not the one in scripts/gen-seed.mjs.
-      - name: Verify generated seed is up to date
-        run: |
-          node scripts/gen-seed.mjs
-          git diff --exit-code drizzle/seed/exercises.sql

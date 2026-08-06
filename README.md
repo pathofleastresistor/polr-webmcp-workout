@@ -54,15 +54,16 @@ Registered on every page, signed out:
 
 Signed in, everywhere:
 
-| Tool                    |                                                            |
-| ----------------------- | ---------------------------------------------------------- |
-| `whoami`                | Name, units, experience, goal, weekly target               |
-| `list_workouts`         | History with volume, sets, duration                        |
-| `get_workout`           | One session in full                                        |
-| `get_training_insights` | Volume per muscle group, staleness, streak, estimated 1RMs |
-| `search_exercises`      | Catalog lookup — returns the ids a plan needs              |
-| `get_active_workout`    | The session in progress and what is still pending          |
-| `start_workout`         | Begins a session and opens it                              |
+| Tool                    |                                                                   |
+| ----------------------- | ----------------------------------------------------------------- |
+| `whoami`                | Name, units, experience, goal, weekly target                      |
+| `list_workouts`         | History with volume, sets, duration                               |
+| `get_workout`           | One session in full                                               |
+| `get_training_insights` | Volume per muscle group, staleness, streak, estimated 1RMs        |
+| `search_exercises`      | Finds movements they already train — returns the ids a plan needs |
+| `create_exercise`       | Adds a movement to their library; matches rather than duplicating |
+| `get_active_workout`    | The session in progress and what is still pending                 |
+| `start_workout`         | Begins a session and opens it                                     |
 
 On the workout page only, while the session is active:
 
@@ -77,7 +78,8 @@ On the workout page only, while the session is active:
 | `cancel_workout`               | Discard without recording                             |
 
 A typical exchange: _"Look at what I've been neglecting and give me 45 minutes."_
-→ `get_training_insights` → `search_exercises` → `start_workout` →
+→ `get_training_insights` → `search_exercises` (→ `create_exercise` for
+anything new) → `start_workout` →
 `propose_workout_plan` → you approve → `log_set` per set → `finish_workout`.
 
 ---
@@ -143,10 +145,13 @@ Fill in `.env` (gitignored):
 **2. Create the database**
 
 ```bash
-npm run db:migrate       # applies migrations and seeds 68 exercises
+npm run db:migrate       # applies migrations
 ```
 
-Creates `./data/spotter.db`. Both steps are idempotent, so re-running is safe.
+Creates `./data/spotter.db`. Idempotent, so re-running is safe.
+
+There is no exercise catalog to seed. The library starts empty and is built by
+the person and their agent from what they actually train.
 
 **3. Run**
 
@@ -184,9 +189,8 @@ Whatever runs it, three things matter:
 
 ## Self-hosting with Docker
 
-A plain Node process with SQLite on a volume. Migrations and the exercise
-catalog are applied on every start, both idempotent, so there is no separate
-provisioning step.
+A plain Node process with SQLite on a volume. Migrations are applied on every
+start, and are idempotent, so there is no separate provisioning step.
 
 ```bash
 cp .env.example .env      # set SPOTTER_DOMAIN, APP_URL, BETTER_AUTH_SECRET, Google creds
@@ -221,7 +225,7 @@ header against `APP_URL`, not the scheme the container sees.
 ### State and backups
 
 Everything worth keeping is the `spotter-data` volume (the SQLite database).
-Back that up. Migrations and the catalog seed re-run on every container start
+Back that up. Migrations re-run on every container start
 and are both idempotent.
 
 ---

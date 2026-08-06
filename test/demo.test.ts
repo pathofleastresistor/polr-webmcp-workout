@@ -7,7 +7,7 @@ import { seedDemoData } from "~/server/services/demo.server";
 import { getInsights } from "~/server/services/insights.server";
 import { listWorkouts } from "~/server/services/workouts.server";
 
-import { seedDemoCatalog, testDb } from "./helpers";
+import { testDb } from "./helpers";
 
 /** A user with no profile row — the state the demo route runs against. */
 async function createBareUser(db: Database): Promise<string> {
@@ -26,7 +26,6 @@ describe("seedDemoData", () => {
 
   beforeEach(async () => {
     db = testDb();
-    await seedDemoCatalog(db);
   });
 
   it("marks the account as demo even though no profile row exists yet", async () => {

@@ -1,9 +1,8 @@
 #!/bin/sh
-# Applies pending migrations and seeds the exercise catalog, then serves the app.
+# Applies pending migrations, then serves the app.
 #
-# Both steps are idempotent, so this is safe on every container start: the
-# migrator skips what it has already applied, and the catalog upserts on its
-# slug ids.
+# Idempotent, so this is safe on every container start: the migrator skips what
+# it has already applied.
 set -eu
 
 : "${PORT:=3000}"
