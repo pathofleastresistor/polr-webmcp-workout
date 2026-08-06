@@ -109,7 +109,7 @@ export function useWorkoutTools(workout: WorkoutDetailView) {
       name: "log_set",
       title: "Log a set",
       description:
-        "Records one set as completed or skipped. setIndex is 1-based within that exercise; omitted fields fall back to the planned values, so logging a set that went to plan needs only the ids and the index. You may log one past the planned count to record an extra set. This is the tool you will call most during a session, and it does not ask for confirmation — the person is watching the page update.",
+        "Records one set as it was actually performed, or as skipped. Pass the reps, weight and RPE the person actually did whenever they differ from the plan — capturing what really happened is the point of logging, and the planned numbers are only a fallback. Weight is always in kilograms, whatever units the person speaks in. Omitted fields fall back to the planned values, so a set that went exactly to plan needs only the ids and the index. setIndex is 1-based within that exercise, and you may log one past the planned count to record an extra set. This is the tool you will call most during a session, and it does not ask for confirmation — the person is watching the page update.",
       schema: logSetInput,
       annotations: {
         readOnlyHint: false,
