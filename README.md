@@ -7,8 +7,8 @@ The agent reads your training history, programs your next workout, and logs sets
 as you call them out. You stay on the page, see everything it does, and approve
 anything consequential before it happens.
 
-- **Stack** — React Router v8 (SSR) on Cloudflare Workers, D1 + Drizzle, Better
-  Auth with Google sign-in, Tailwind v4, Zod.
+- **Stack** — React Router v8 (SSR) on Node, SQLite + Drizzle, Better Auth with
+  Google sign-in, Tailwind v4, Zod.
 - **Agent interface** — [WebMCP](https://webmachinelearning.github.io/webmcp/)
   (`document.modelContext`), 15 tools scoped to what is on screen.
 
@@ -91,31 +91,21 @@ something real to work with.
 
 ```bash
 npm install
-npx wrangler d1 create polr-workout-db     # paste database_id into wrangler.jsonc
 
-printf 'BETTER_AUTH_SECRET=%s\nDEMO_MODE=true\n' "$(openssl rand -base64 32)" > .dev.vars
+printf 'BETTER_AUTH_SECRET=%s\nDEMO_MODE=true\n' "$(openssl rand -base64 32)" > .env
 
-npm run db:migrate:local
-npm run db:seed:local
-npm run dev                                 # http://localhost:5173 -> "Explore the demo"
+npm run db:migrate
+npm run dev               # http://localhost:5173 -> "Explore the demo"
 ```
 
-To put it on a public URL, deploy with the flag set as a plain var:
-
-```bash
-npx wrangler d1 migrations apply polr-workout-db --remote
-npm run db:seed:remote
-wrangler secret put BETTER_AUTH_SECRET
-npm run build && npx wrangler deploy --var DEMO_MODE:true
-```
-
-Then set `APP_URL` in `wrangler.jsonc` to the deployed `*.workers.dev` origin and
-deploy once more, so cookies are marked `Secure` and the origin check matches.
+To put it on a public URL, set `DEMO_MODE=true` in the environment of a
+[self-hosted deployment](#self-hosting-with-docker). Set `APP_URL` to that
+public origin so cookies are marked `Secure` and the origin check matches.
 
 **Demo mode is an authentication bypass.** It is off unless `DEMO_MODE` is
-exactly `"true"`, it is deliberately absent from `wrangler.jsonc` so a normal
-`wrangler deploy` cannot carry it, it logs a startup warning, and it shows a
-persistent banner on every page. `/demo/start` returns 404 whenever it is off.
+exactly `"true"`, it is absent from every committed env file, it logs a startup
+warning, and it shows a persistent banner on every page. `/demo/start` returns
+404 whenever it is off.
 
 Switching it off later revokes the demo logins: demo accounts are flagged
 `user_profile.is_demo`, and sessions belonging to one are rejected once the flag
@@ -130,27 +120,19 @@ DELETE FROM user WHERE id IN (SELECT user_id FROM user_profile WHERE is_demo = 1
 
 ## Running it locally (with Google)
 
-**Prerequisites:** Node 22+, a Cloudflare account, and a Google OAuth client.
+**Prerequisites:** Node 22+ and a Google OAuth client. No cloud account.
 
 ```bash
 npm install
 ```
 
-**1. Create the database**
+**1. Configure secrets**
 
 ```bash
-npx wrangler d1 create polr-workout-db
+cp .env.example .env
 ```
 
-Copy the printed `database_id` into `wrangler.jsonc`.
-
-**2. Configure secrets**
-
-```bash
-cp .dev.vars.example .dev.vars
-```
-
-Fill in `.dev.vars` (gitignored):
+Fill in `.env` (gitignored):
 
 - `BETTER_AUTH_SECRET` — `openssl rand -base64 32`
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — from the
@@ -158,14 +140,15 @@ Fill in `.dev.vars` (gitignored):
   Create an **OAuth 2.0 Web application** client and add
   `http://localhost:5173/api/auth/callback/google` as an authorised redirect URI.
 
-**3. Migrate and seed**
+**2. Create the database**
 
 ```bash
-npm run db:migrate:local
-npm run db:seed:local     # 68 exercises
+npm run db:migrate       # applies migrations and seeds 68 exercises
 ```
 
-**4. Run**
+Creates `./data/spotter.db`. Both steps are idempotent, so re-running is safe.
+
+**3. Run**
 
 ```bash
 npm run dev               # http://localhost:5173
@@ -178,31 +161,32 @@ hand and the agent console says so — it does not silently do nothing.
 
 ## Deploying
 
-```bash
-npx wrangler d1 migrations apply polr-workout-db --remote
-npm run db:seed:remote
+**Self-hosting is the supported path today**, and the section below covers it.
 
-wrangler secret put BETTER_AUTH_SECRET
-wrangler secret put GOOGLE_CLIENT_ID
-wrangler secret put GOOGLE_CLIENT_SECRET
+There is deliberately nothing vendor-specific left to configure. This is an
+ordinary Node SSR process with a SQLite file next to it: no proprietary runtime,
+no managed database, no platform bindings. Deploying somewhere else is a
+question of where the process runs and where that file lives, not a rewrite —
+which is the point. Support for a range of hosting providers is intended to
+follow; the architecture is the part that had to come first.
 
-npm run deploy
-```
+Whatever runs it, three things matter:
 
-Then set `APP_URL` in `wrangler.jsonc` `vars` to the deployed origin (no
-trailing slash) and add `https://<your-domain>/api/auth/callback/google` to the
-Google client's authorised redirect URIs. `APP_URL` is load-bearing: it is the
-OAuth redirect base _and_ the origin allowlist for state-changing requests, and
-an `https://` value is what flips cookies to `Secure` and enables HSTS.
+- `APP_URL` is load-bearing. It is the OAuth redirect base, the origin allowlist
+  for state-changing requests, and the value the server pins each request to. An
+  `https://` value is what flips cookies to `Secure` and enables HSTS.
+- Add `https://<your-domain>/api/auth/callback/google` to the Google client's
+  authorised redirect URIs.
+- The SQLite file needs durable storage. It is the only state worth backing up,
+  and a platform with an ephemeral filesystem will lose it on every restart.
 
 ---
 
 ## Self-hosting with Docker
 
-Runs on workerd — the same runtime Cloudflare Workers use — with D1 backed by a
-SQLite file on a volume. A self-hosted instance is therefore behaviourally
-identical to a deployed one: same runtime, same bindings, same migrations, not a
-second code path.
+A plain Node process with SQLite on a volume. Migrations and the exercise
+catalog are applied on every start, both idempotent, so there is no separate
+provisioning step.
 
 ```bash
 cp .env.example .env      # set SPOTTER_DOMAIN, APP_URL, BETTER_AUTH_SECRET, Google creds
@@ -236,7 +220,7 @@ header against `APP_URL`, not the scheme the container sees.
 
 ### State and backups
 
-Everything worth keeping is the `spotter-data` volume (the D1 SQLite files).
+Everything worth keeping is the `spotter-data` volume (the SQLite database).
 Back that up. Migrations and the catalog seed re-run on every container start
 and are both idempotent.
 
@@ -264,15 +248,15 @@ on the user's behalf, and possibly reading text written by someone else.
 - **Prompt injection** — tools returning user-authored text set
   `untrustedContentHint` and delimit the text, so an agent treats a workout note
   as data rather than instructions.
-- **Rate limiting** — per-user Cloudflare rate limits on tool traffic and per-IP
+- **Rate limiting** — per-user limits on tool traffic and per-IP
   on auth, because an agent can loop far faster than a person can click.
 - **Input validation** — Zod at the tool boundary and again on the server. The
   server's check is the only one trusted.
-- **Secrets** — Worker secrets only. `.dev.vars` is gitignored.
+- **Secrets** — environment variables only, never committed. `.env` is gitignored.
 
-`npm audit` reports advisories in `esbuild`, `undici` and `drizzle-kit`. All are
-dev-only transitive dependencies (dev server, Wrangler's local runtime, the
-migration generator); none are in the Worker's dependency graph at runtime.
+`npm audit` reports advisories in `esbuild` and `drizzle-kit`. Both are dev-only
+transitive dependencies (the dev server and the migration generator); neither is
+in the server's dependency graph at runtime.
 
 ---
 
@@ -282,12 +266,16 @@ migration generator); none are in the Worker's dependency graph at runtime.
 npm test
 ```
 
-32 tests run inside `workerd` against a real local D1 rather than a mock, because
-much of the correctness lives in the SQL — unique indexes on `(workout,
-position)` and `(exercise, set_index)`, cascades, and `batch()` atomicity. They
-cover the full lifecycle, the guards (no second active workout, no re-planning
-over logged sets, no editing a finished session), cross-user isolation, the
-insights math, and the contract/JSON-Schema conversion.
+66 tests run against a real in-memory SQLite database rather than a mock,
+because much of the correctness lives in the SQL — unique indexes on `(workout,
+position)` and `(exercise, set_index)`, cascades, and transaction atomicity.
+Each test file gets its own database with the real migrations applied, so they
+exercise the schema production actually has.
+
+They cover the full lifecycle, the guards (no second active workout, no
+re-planning over logged sets, no editing a finished session), cross-user
+isolation, the insights math, the rate limiter, the origin checks, and the
+contract/JSON-Schema conversion.
 
 ---
 
