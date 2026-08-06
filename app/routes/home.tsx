@@ -39,7 +39,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
  * browser never holds anything it could leak.
  */
 export async function action({ request, context }: Route.ActionArgs) {
-  const { auth, env, config } = getAppContext(context);
+  const { auth, config } = getAppContext(context);
 
   if (!config.googleEnabled) {
     throw new Response(
@@ -48,7 +48,7 @@ export async function action({ request, context }: Route.ActionArgs) {
     );
   }
 
-  await enforceRateLimit(env, "AUTH_RATE_LIMIT", rateLimitKey(request, null));
+  await enforceRateLimit("AUTH_RATE_LIMIT", rateLimitKey(request, null));
 
   const formData = await request.formData();
   const next = formData.get("next");
