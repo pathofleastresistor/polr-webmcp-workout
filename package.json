@@ -11,7 +11,7 @@
     "build": "react-router build",
     "preview": "npm run build && vite preview",
     "deploy": "npm run build && wrangler deploy",
-    "typecheck": "react-router typegen && wrangler types --include-runtime=false && tsc --noEmit",
+    "typecheck": "react-router typegen && wrangler types && tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
