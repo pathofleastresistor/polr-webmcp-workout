@@ -1,0 +1,57 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "polr-webmcp-workout",
+  "main": "./workers/app.ts",
+  "compatibility_date": "2026-08-06",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // React Router emits the browser bundle here; the Worker serves it and falls
+  // back to the SSR handler for anything that is not a static file.
+  "assets": {
+    "directory": "./build/client",
+    "binding": "ASSETS",
+    "not_found_handling": "none"
+  },
+
+  "observability": {
+    "enabled": true
+  },
+  "upload_source_maps": true,
+
+  // Created with: wrangler d1 create polr-workout-db
+  // Replace `database_id` with the id printed by that command.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "polr-workout-db",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "drizzle/migrations"
+    }
+  ],
+
+  // Per-user throttling for agent-driven tool traffic. See app/server/rate-limit.ts,
+  // which degrades to a permissive no-op when the binding is absent (e.g. local dev).
+  "ratelimits": [
+    {
+      "name": "TOOL_RATE_LIMIT",
+      "namespace_id": "1001",
+      "simple": { "limit": 120, "period": 60 }
+    },
+    {
+      "name": "AUTH_RATE_LIMIT",
+      "namespace_id": "1002",
+      "simple": { "limit": 20, "period": 60 }
+    }
+  ],
+
+  "vars": {
+    // Public origin of the deployment. Used for OAuth redirect URLs and for
+    // rejecting cross-origin state-changing requests. Override per environment.
+    "APP_URL": "http://localhost:5173"
+  }
+
+  // Secrets (set with `wrangler secret put <NAME>`), never committed:
+  //   BETTER_AUTH_SECRET      - 32+ byte random string for session/token signing
+  //   GOOGLE_CLIENT_ID        - Google OAuth 2.0 web client id
+  //   GOOGLE_CLIENT_SECRET    - Google OAuth 2.0 web client secret
+}
