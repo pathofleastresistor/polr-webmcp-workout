@@ -47,7 +47,8 @@ export function useWebMcpTool<TSchema extends z.ZodType>(
   definition: WebMcpToolDefinition<TSchema>,
   { enabled = true }: { enabled?: boolean } = {},
 ): void {
-  const { registerTool, beginActivity, endActivity } = useWebMcp();
+  const { registerTool, beginActivity, endActivity, connectionEpoch } =
+    useWebMcp();
 
   const definitionRef = useRef(definition);
 
@@ -147,8 +148,13 @@ export function useWebMcpTool<TSchema extends z.ZodType>(
     // render) and leaving an agent's tool list continuously churning. The
     // descriptor reads it through `definitionRef` instead, which is also how
     // the rest of the definition is kept current.
+    //
+    // `connectionEpoch` is here for the opposite reason: a restore from the
+    // back/forward cache leaves this component mounted but the registration
+    // behind it dead, so it is the one thing that must force a re-register
+    // without the tool's identity having changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, title, description, readOnly, enabled]);
+  }, [name, title, description, readOnly, enabled, connectionEpoch]);
 }
 
 function firstText(result: CallToolResult): string | null {
