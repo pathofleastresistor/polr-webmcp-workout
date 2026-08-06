@@ -118,12 +118,16 @@ export function useWebMcpTool<TSchema extends z.ZodType>(
           title,
           description,
           inputSchema: toolInputSchema(definitionRef.current.schema),
-          annotations,
+          annotations: definitionRef.current.annotations,
           execute: execute as never,
         },
         { signal: controller.signal },
       )
       .catch((error: unknown) => {
+        // Unmounting aborts the signal on purpose, and the pending
+        // registration rejects with an AbortError as a result. That is this
+        // hook's own teardown completing, not a failure worth reporting.
+        if (controller.signal.aborted) return;
         console.error(`Failed to register WebMCP tool "${name}"`, error);
       });
 
@@ -135,8 +139,16 @@ export function useWebMcpTool<TSchema extends z.ZodType>(
     };
     // The descriptor is intentionally registered once per tool identity; live
     // values are read through `definitionRef` inside `execute`.
+    //
+    // `annotations` is deliberately absent: every call site passes an object
+    // literal, so it is a fresh identity on every render. Including it made
+    // this effect tear down and re-register on *each* render — aborting the
+    // in-flight registration each time (logging an AbortError per tool per
+    // render) and leaving an agent's tool list continuously churning. The
+    // descriptor reads it through `definitionRef` instead, which is also how
+    // the rest of the definition is kept current.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, title, description, readOnly, enabled, annotations]);
+  }, [name, title, description, readOnly, enabled]);
 }
 
 function firstText(result: CallToolResult): string | null {
