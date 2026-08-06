@@ -1,0 +1,23 @@
+# Caddy fetches and renews a certificate for this domain automatically, so the
+# app is served over HTTPS. That is a functional requirement, not a nicety:
+# WebMCP is a secure-context API, and on plain http the browser will not expose
+# document.modelContext at all.
+{$SPOTTER_DOMAIN} {
+	reverse_proxy spotter:8787 {
+		# Caddy sets X-Forwarded-For to the address it actually observed,
+		# appending to anything the client sent. The app reads the rightmost
+		# entry (see app/server/rate-limit.server.ts), so per-client rate
+		# limiting works and cannot be forged by a spoofed header.
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	encode zstd gzip
+
+	# The app sets its own CSP, HSTS, frame and referrer headers per response;
+	# duplicating them here would only risk the two drifting apart.
+
+	log {
+		output stdout
+		format console
+	}
+}

@@ -197,6 +197,51 @@ an `https://` value is what flips cookies to `Secure` and enables HSTS.
 
 ---
 
+## Self-hosting with Docker
+
+Runs on workerd — the same runtime Cloudflare Workers use — with D1 backed by a
+SQLite file on a volume. A self-hosted instance is therefore behaviourally
+identical to a deployed one: same runtime, same bindings, same migrations, not a
+second code path.
+
+```bash
+cp .env.example .env      # set SPOTTER_DOMAIN, APP_URL, BETTER_AUTH_SECRET, Google creds
+docker compose up -d
+```
+
+The sample compose file runs Caddy in front, which obtains a certificate
+automatically. **That is a functional requirement, not a nicety:** WebMCP is a
+secure-context API, so on plain `http://` (other than localhost) the browser
+never exposes `document.modelContext`, tools silently fail to register, and the
+agent half of the product does nothing. The app still works by hand, which is
+what makes the failure easy to miss.
+
+Already running Caddy on the host? Drop the `caddy` service, publish
+`spotter`'s port, and point your existing Caddyfile at it — see
+`docker/Caddyfile` for the one header that matters.
+
+### Getting `APP_URL` right
+
+`APP_URL` must be the public origin browsers use, with no trailing slash. It is
+load-bearing three times over:
+
+- it is the OAuth redirect base, so Google's authorised redirect URI must be
+  exactly `${APP_URL}/api/auth/callback/google`;
+- it is the allowlist for state-changing requests — a mismatch means every
+  mutation returns 403;
+- an `https://` value is what marks cookies `Secure` and enables HSTS.
+
+TLS terminating at Caddy is fine: the checks compare the browser's `Origin`
+header against `APP_URL`, not the scheme the container sees.
+
+### State and backups
+
+Everything worth keeping is the `spotter-data` volume (the D1 SQLite files).
+Back that up. Migrations and the catalog seed re-run on every container start
+and are both idempotent.
+
+---
+
 ## Security
 
 The threat model has an extra actor most apps do not: an agent driving the page

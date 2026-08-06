@@ -37,6 +37,37 @@ export async function enforceRateLimit(
 /** Falls back to the connecting IP so anonymous traffic is still bounded. */
 export function rateLimitKey(request: Request, userId: string | null): string {
   if (userId) return `user:${userId}`;
-  const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
-  return `ip:${ip}`;
+  return `ip:${clientIp(request) ?? "unknown"}`;
+}
+
+/**
+ * Best-effort client address.
+ *
+ * On Cloudflare, `CF-Connecting-IP` is set by the edge and cannot be spoofed,
+ * so it wins. Self-hosted behind a reverse proxy (Caddy, nginx, Traefik) that
+ * header is absent and `X-Forwarded-For` carries the chain instead — without
+ * this, every anonymous request shares the key "unknown" and the auth rate
+ * limit becomes one global bucket rather than per-client.
+ *
+ * The *rightmost* entry is used, not the leftmost. A client can prepend
+ * anything it likes to `X-Forwarded-For`; the proxy appends the address it
+ * actually saw, so the last entry is the only one a single trusted hop
+ * guarantees. Taking the first would let a caller mint a fresh rate-limit
+ * bucket per request just by varying the header.
+ */
+export function clientIp(request: Request): string | null {
+  const cloudflare = request.headers.get("CF-Connecting-IP");
+  if (cloudflare) return cloudflare;
+
+  const forwarded = request.headers.get("X-Forwarded-For");
+  if (forwarded) {
+    const hops = forwarded
+      .split(",")
+      .map((hop) => hop.trim())
+      .filter(Boolean);
+    const nearest = hops.at(-1);
+    if (nearest) return nearest;
+  }
+
+  return null;
 }

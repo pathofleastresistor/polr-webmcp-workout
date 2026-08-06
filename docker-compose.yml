@@ -1,0 +1,68 @@
+# Sample self-hosting setup: Spotter behind a Caddy reverse proxy.
+#
+# Caddy terminates TLS and gets a certificate automatically, which matters more
+# than usual here: WebMCP is a secure-context API, so without HTTPS the browser
+# will not expose the page's tools to an agent at all.
+#
+# Quick start:
+#   cp .env.example .env     # then edit it
+#   docker compose up -d
+#
+# Already have Caddy running elsewhere on the host? Drop the `caddy` service,
+# keep `spotter`, publish its port, and point your existing Caddyfile at it.
+
+services:
+  spotter:
+    build: .
+    restart: unless-stopped
+    environment:
+      # The public origin browsers use. Drives the OAuth redirect, the
+      # cross-origin request check, and whether cookies are marked Secure.
+      # No trailing slash.
+      APP_URL: ${APP_URL:?set APP_URL in .env, e.g. https://spotter.example.com}
+
+      # openssl rand -base64 32
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
+
+      # From https://console.cloud.google.com/apis/credentials. Authorised
+      # redirect URI must be exactly ${APP_URL}/api/auth/callback/google
+      # Leave blank and set DEMO_MODE=true to look around without them.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+
+      # Authentication bypass for evaluation only. See README.
+      DEMO_MODE: ${DEMO_MODE:-}
+    volumes:
+      # The D1 SQLite files. This is the only state worth backing up.
+      - spotter-data:/data
+    expose:
+      - "8787"
+    networks:
+      - spotter
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # certificates — persist, or you will hit LE rate limits
+      - caddy-config:/config
+    environment:
+      # Must match the host in APP_URL.
+      SPOTTER_DOMAIN: ${SPOTTER_DOMAIN:?set SPOTTER_DOMAIN in .env, e.g. spotter.example.com}
+    depends_on:
+      - spotter
+    networks:
+      - spotter
+
+volumes:
+  spotter-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  spotter:
