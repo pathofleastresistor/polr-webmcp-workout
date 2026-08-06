@@ -1,8 +1,7 @@
 import type { MiddlewareFunction } from "react-router";
 
 import { appContext, createAppContext } from "./context";
-import { nonceContext } from "./nonce";
-import { generateNonce } from "./security.server";
+import { generateNonce, nonceContext } from "./nonce";
 
 /**
  * Establishes what the rest of the request depends on: the application context

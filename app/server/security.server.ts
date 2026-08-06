@@ -34,12 +34,6 @@ function contentSecurityPolicy(nonce: string): string {
   ].join("; ");
 }
 
-export function generateNonce(): string {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return btoa(String.fromCharCode(...bytes));
-}
-
 /**
  * Rejects state-changing requests whose `Origin` is not this deployment.
  *
@@ -102,4 +96,4 @@ export const securityMiddleware: MiddlewareFunction<Response> = async (
   return response;
 };
 
-export { nonceContext };
+export { generateNonce, nonceContext } from "./nonce";

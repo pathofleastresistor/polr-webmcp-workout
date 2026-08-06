@@ -3,7 +3,7 @@ import type { EntryContext, RouterContextProvider } from "react-router";
 import { ServerRouter } from "react-router";
 import { isbot } from "isbot";
 
-import { nonceContext } from "./server/nonce";
+import { generateNonce, nonceContext } from "./server/nonce";
 
 const ABORT_DELAY = 10_000;
 
@@ -23,7 +23,11 @@ export default async function handleRequest(
   routerContext: EntryContext,
   loadContext: RouterContextProvider,
 ): Promise<Response> {
-  const nonce = loadContext.get(nonceContext);
+  // Falls back rather than trusting the middleware to have run: it does not on
+  // an unmatched URL, and this render is what produces the 404 page. Any
+  // response that did go through the middleware uses the nonce already written
+  // into its CSP header, so the two cannot disagree.
+  const nonce = loadContext.get(nonceContext) || generateNonce();
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), ABORT_DELAY);
