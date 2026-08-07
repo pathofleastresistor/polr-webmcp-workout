@@ -74,10 +74,16 @@ export interface RegisterToolOptions {
 }
 
 export interface ModelContext {
+  /**
+   * The draft returns a promise; Chrome's implementation returns nothing. Both
+   * are typed here so callers are forced to check before treating it as a
+   * thenable — see `useWebMcpTool`, where assuming the promise crashed the page
+   * on exactly the browsers that support the API.
+   */
   registerTool(
     tool: ToolDescriptor<never>,
     options?: RegisterToolOptions,
-  ): Promise<void>;
+  ): Promise<void> | void;
   addEventListener?(type: "toolchange", listener: () => void): void;
   removeEventListener?(type: "toolchange", listener: () => void): void;
 }

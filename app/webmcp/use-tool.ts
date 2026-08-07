@@ -112,25 +112,32 @@ export function useWebMcpTool<TSchema extends z.ZodType>(
       }
     };
 
-    void modelContext
-      .registerTool(
-        {
-          name,
-          title,
-          description,
-          inputSchema: toolInputSchema(definitionRef.current.schema),
-          annotations: definitionRef.current.annotations,
-          execute: execute as never,
-        },
-        { signal: controller.signal },
-      )
-      .catch((error: unknown) => {
+    // `registerTool` is specified as returning a promise, but Chrome's current
+    // implementation returns nothing. Assuming the promise threw a TypeError
+    // out of this effect, which React escalates to the nearest error boundary —
+    // so a browser that actually *has* WebMCP was the only one that broke, and
+    // it took the whole page with it. Treat the return value as optional.
+    const registration = modelContext.registerTool(
+      {
+        name,
+        title,
+        description,
+        inputSchema: toolInputSchema(definitionRef.current.schema),
+        annotations: definitionRef.current.annotations,
+        execute: execute as never,
+      },
+      { signal: controller.signal },
+    ) as Promise<void> | undefined;
+
+    if (typeof registration?.catch === "function") {
+      void registration.catch((error: unknown) => {
         // Unmounting aborts the signal on purpose, and the pending
         // registration rejects with an AbortError as a result. That is this
         // hook's own teardown completing, not a failure worth reporting.
         if (controller.signal.aborted) return;
         console.error(`Failed to register WebMCP tool "${name}"`, error);
       });
+    }
 
     const unregisterFromUi = registerTool({ name, description, readOnly });
 
