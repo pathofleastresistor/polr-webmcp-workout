@@ -28,10 +28,17 @@ export function formatWeight(kg: number | null, units: UnitSystem): string {
   return `${rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(1)} ${unitLabel(units)}`;
 }
 
-/** Volume figures get thousands separators and no decimals; they are large. */
+/**
+ * Volume figures get thousands separators and no decimals; they are large.
+ *
+ * The locale is pinned rather than left to the runtime: this renders on the
+ * server and again in the browser, and a bare `toLocaleString()` reads a
+ * different default in each ("3,220" against "3.220"). Any difference is a
+ * hydration mismatch, which costs the whole subtree.
+ */
 export function formatVolume(kg: number, units: UnitSystem): string {
   const value = Math.round(fromKg(kg, units));
-  return `${value.toLocaleString()} ${unitLabel(units)}`;
+  return `${value.toLocaleString("en-US")} ${unitLabel(units)}`;
 }
 
 export function formatRelativeDays(days: number | null): string {

@@ -2,6 +2,7 @@ import { Link } from "react-router";
 
 import { AppShell } from "~/components/AppShell";
 import { CompletedWorkout } from "~/components/CompletedWorkout";
+import { LocalTime } from "~/components/LocalTime";
 import { WorkoutPlanEmptyState } from "~/components/WorkoutPlanEmptyState";
 import { WorkoutRunner } from "~/components/WorkoutRunner";
 import { getAppContext } from "~/server/context";
@@ -66,9 +67,17 @@ export default function WorkoutRoute({ loaderData }: Route.ComponentProps) {
             {workout.title}
           </h1>
           <p className="mt-1 text-sm text-slate-400">
-            {workout.status === "active"
-              ? `In progress · started ${new Date(workout.startedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
-              : `${workout.status} · ${new Date(workout.startedAt).toLocaleDateString()}`}
+            {workout.status === "active" ? (
+              <>
+                In progress · started{" "}
+                <LocalTime value={workout.startedAt} style="clock" />
+              </>
+            ) : (
+              <>
+                {workout.status} ·{" "}
+                <LocalTime value={workout.startedAt} style="date" />
+              </>
+            )}
             {workout.plannedBy === "agent" && " · planned by your agent"}
           </p>
         </div>

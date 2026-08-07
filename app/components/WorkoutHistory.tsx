@@ -1,3 +1,4 @@
+import { LocalTime } from "~/components/LocalTime";
 import type { UnitSystem } from "~/db/schema";
 import type { WorkoutSummaryView } from "~/domain/types";
 import { formatVolume } from "~/lib/units";
@@ -40,11 +41,7 @@ export function WorkoutHistory({
                   )}
                 </p>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  {new Date(workout.startedAt).toLocaleDateString(undefined, {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                  })}
+                  <LocalTime value={workout.startedAt} style="weekdayDate" />
                   {workout.durationMinutes !== null &&
                     ` · ${workout.durationMinutes} min`}
                 </p>

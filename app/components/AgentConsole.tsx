@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { LocalTime } from "~/components/LocalTime";
 import { useWebMcp } from "~/webmcp/provider";
 
 /**
@@ -73,7 +74,7 @@ export function AgentConsole() {
                         <p className="text-slate-200">{entry.summary}</p>
                         <p className="font-mono text-[11px] text-slate-500">
                           {entry.toolName} ·{" "}
-                          {new Date(entry.at).toLocaleTimeString()}
+                          <LocalTime value={entry.at} style="clock" />
                         </p>
                       </div>
                     </div>

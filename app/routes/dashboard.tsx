@@ -2,7 +2,9 @@ import { Form, Link, redirect, useNavigation } from "react-router";
 
 import { AppShell } from "~/components/AppShell";
 import { InsightsPanel } from "~/components/InsightsPanel";
+import { LocalTime } from "~/components/LocalTime";
 import { WorkoutHistory } from "~/components/WorkoutHistory";
+import { useHydrated } from "~/lib/use-hydrated";
 import { getAppContext } from "~/server/context";
 import { readActor } from "~/server/api-handler.server";
 import { listRecentEvents, recordEvent } from "~/server/services/audit.server";
@@ -86,12 +88,18 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
   // signed in and on this page.
   useAccountTools();
 
+  const hydrated = useHydrated();
+
   return (
     <AppShell user={profile} demoMode={demoMode}>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">
-            {greeting()}, {profile.name.split(" ")[0]}
+            {/* Which greeting is right depends on the visitor's clock, not the
+                container's, so it settles on hydration alongside the
+                timestamps — see `useHydrated`. */}
+            {hydrated ? greeting() : "Hello"},{" "}
+            {profile.name.split(" ")[0]}
           </h1>
           <p className="mt-2 text-slate-400">
             {insights.daysSinceLastWorkout === null
@@ -163,7 +171,7 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
                     >
                       {event.actor === "agent" ? "your agent" : "you"}
                     </span>{" "}
-                    · {new Date(event.createdAt).toLocaleString()}
+                    · <LocalTime value={event.createdAt} style="dateTime" />
                   </p>
                 </li>
               ))}
