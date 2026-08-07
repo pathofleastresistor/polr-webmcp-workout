@@ -139,6 +139,31 @@ export function describeInsights(insights: InsightsView): string {
 }
 
 /** Renders a proposed plan as the review list shown in the confirm dialog. */
+/**
+ * Turns a catalog id into something a person can read.
+ *
+ * Agents are told to pass `exerciseId` rather than a name, because an id is
+ * unambiguous — which left the approval dialog listing `barbell-bench-press`.
+ * That dialog is where someone actually consents to a session, so it has to be
+ * legible.
+ *
+ * Shared catalog ids are slugs derived from the exercise name (see
+ * scripts/gen-seed.mjs), so reversing the slug reproduces the name exactly. An
+ * id that is not slug-shaped — a custom exercise keyed by uuid — is left alone
+ * rather than mangled into nonsense.
+ */
+function readableExerciseId(id: string | undefined): string | undefined {
+  if (!id) return undefined;
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) return id;
+  // A uuid is lowercase and hyphenated too; its long hex runs give it away.
+  if (/[0-9a-f]{8,}/.test(id)) return id;
+
+  return id
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 export function describePlanForReview(
   exercises: Array<{
     exerciseId?: string | undefined;
@@ -152,7 +177,8 @@ export function describePlanForReview(
   }>,
 ): string[] {
   return exercises.map((entry) => {
-    const label = entry.exerciseName ?? entry.exerciseId ?? "Exercise";
+    const label =
+      entry.exerciseName ?? readableExerciseId(entry.exerciseId) ?? "Exercise";
     const sets = entry.sets
       .map((set) => {
         const bits = [

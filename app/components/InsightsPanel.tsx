@@ -53,7 +53,12 @@ export function InsightsPanel({
         />
       </div>
 
-      {insights.muscleGroupLoad.length > 0 && (
+      {/*
+        Keyed on work actually done, not on the length of the list: every
+        trainable group is now always present so an agent can see the gaps, so
+        a brand-new account would otherwise render a chart of ten empty bars.
+      */}
+      {insights.totalSets > 0 && (
         <div className="mt-8">
           <h3 className="text-sm font-medium text-slate-300">
             Where the work went

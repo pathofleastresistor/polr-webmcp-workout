@@ -387,3 +387,77 @@ describe("authorization", () => {
     );
   });
 });
+
+describe("starting a workout with a plan in one call", () => {
+  let db: Database;
+  let userId: string;
+
+  beforeEach(async () => {
+    db = testDb();
+    await seedExercises(db);
+    userId = (await createUser(db)).id;
+  });
+
+  it("creates the session and populates it", async () => {
+    // The dashboard path: the planning tools are not registered there, so this
+    // is the only way for an agent to act on "give me a workout" from it.
+    const started = await startWorkout(
+      db,
+      userId,
+      {
+        title: "Push day",
+        exercises: [
+          {
+            exerciseId: "bench-press",
+            rationale: "Chest has had no work in two weeks.",
+            sets: [
+              { weightKg: 60, reps: 8, isWarmup: false },
+              { weightKg: 60, reps: 8, isWarmup: false },
+            ],
+          },
+          { exerciseId: "pull-up", sets: [{ reps: 8, isWarmup: false }] },
+        ],
+      },
+      "agent",
+    );
+
+    expect(started.status).toBe("active");
+    expect(started.title).toBe("Push day");
+    expect(started.plannedBy).toBe("agent");
+    expect(started.exercises).toHaveLength(2);
+    expect(started.exercises[0]!.sets).toHaveLength(2);
+    expect(started.exercises[0]!.rationale).toContain("two weeks");
+
+    // And it is the one active session, not a second one alongside an empty.
+    const active = await getActiveWorkout(db, userId);
+    expect(active?.id).toBe(started.id);
+  });
+
+  it("still starts an empty session when no plan is given", async () => {
+    const started = await startWorkout(db, userId, {}, "human");
+    expect(started.exercises).toHaveLength(0);
+    expect(started.plannedBy).toBeNull();
+  });
+
+  it("leaves no workout behind when the plan is invalid", async () => {
+    await expect(
+      startWorkout(
+        db,
+        userId,
+        {
+          exercises: [
+            {
+              exerciseName: "Nonexistent",
+              sets: [{ reps: 5, isWarmup: false }],
+            },
+          ],
+        },
+        "agent",
+      ),
+    ).rejects.toMatchObject({ code: "unknown_exercise" });
+
+    // A half-created session would block every later start_workout with
+    // "a workout is already in progress" — the worst possible failure mode.
+    expect(await getActiveWorkout(db, userId)).toBeNull();
+  });
+});

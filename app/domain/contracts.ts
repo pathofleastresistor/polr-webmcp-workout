@@ -165,6 +165,22 @@ export const startWorkoutInput = z.object({
       "Optional name for the session. Defaults to a time-of-day label.",
     ),
   notes: freeText(1000).optional(),
+  /**
+   * Lets a session be started and planned in one call.
+   *
+   * Without this, an agent on the dashboard has to call start_workout and then
+   * propose_workout_plan — but the planning tools only register once the
+   * workout page is open, so the tool it is told to call next does not exist
+   * at the moment it is told to call it.
+   */
+  exercises: z
+    .array(plannedExerciseSchema)
+    .min(1)
+    .max(20)
+    .optional()
+    .describe(
+      "Optional plan to apply immediately, same shape as propose_workout_plan. Pass this when the person asked for a workout rather than an empty session — it starts and populates in one step, which is the only way to do both from the dashboard.",
+    ),
 });
 
 export const addExerciseInput = z.object({

@@ -22,6 +22,7 @@ import { toolError, toolOk, untrusted } from "../runtime";
 import { useWebMcpTool } from "../use-tool";
 import {
   describeInsights,
+  describePlanForReview,
   describeWorkoutDetail,
   describeWorkoutSummary,
 } from "./format";
@@ -206,22 +207,40 @@ export function useAccountTools() {
     name: "start_workout",
     title: "Start a workout",
     description:
-      "Begins a new session and opens it in the browser. The session starts empty — follow up with propose_workout_plan to fill it in. Only one workout can be in progress at a time; if one already is, this returns an error naming it.",
+      "Begins a new session and opens it in the browser. Pass `exercises` to start and populate it in one call — do that whenever the person asked for a workout rather than an empty session, because the planning tools only exist once the workout page is open, so from anywhere else this is the only way to fill one in. Omit `exercises` only if they explicitly want to build it themselves. Call get_training_insights and search_exercises first so the plan fits what they have been doing. Only one workout can be in progress at a time; if one already is, this returns an error naming it.",
     schema: startWorkoutInput,
     annotations: { readOnlyHint: false, openWorldHint: false },
-    activityLabel: (args) => `Started "${args.title ?? "a workout"}"`,
+    activityLabel: (args) =>
+      args.exercises?.length
+        ? `Started "${args.title ?? "a workout"}" with ${args.exercises.length} exercise(s)`
+        : `Started "${args.title ?? "a workout"}"`,
     execute: async (args, client) => {
       // Starting a session is cheap and reversible (cancel_workout discards
       // it), but it changes what the person is looking at, so it is still
       // confirmed rather than done behind their back.
+      const planned = args.exercises ?? [];
+
       const approved = await requestConfirmation(
         {
           toolName: "start_workout",
-          title: "Start a new workout?",
-          description:
-            "Your agent wants to begin a new session and open it in this tab.",
-          details: args.title ? [`Title: ${args.title}`] : undefined,
-          confirmLabel: "Start workout",
+          title: planned.length
+            ? args.title
+              ? `Start "${args.title}"?`
+              : "Start this workout?"
+            : "Start a new workout?",
+          description: planned.length
+            ? "Your agent put together the session below. Nothing is saved until you accept it."
+            : "Your agent wants to begin a new empty session and open it in this tab.",
+          // The whole plan is listed, exercise by exercise: approving a session
+          // you cannot see is not consent.
+          details: planned.length
+            ? describePlanForReview(planned)
+            : args.title
+              ? [`Title: ${args.title}`]
+              : undefined,
+          confirmLabel: planned.length
+            ? "Start with this plan"
+            : "Start workout",
           tone: "neutral",
         },
         client,
@@ -243,8 +262,15 @@ export function useAccountTools() {
       await navigate(`/workout/${workout.id}`);
       await revalidator.revalidate();
 
+      if (workout.exercises.length > 0) {
+        return toolOk(
+          `Started "${workout.title}" (id ${workout.id}) and opened it with the plan applied.\n${describeWorkoutDetail(workout)}`,
+          workout,
+        );
+      }
+
       return toolOk(
-        `Started "${workout.title}" (id ${workout.id}) and opened it. It has no exercises yet — call propose_workout_plan with this workoutId to populate it.`,
+        `Started "${workout.title}" (id ${workout.id}) and opened it. It has no exercises yet. The workout page is now open, so propose_workout_plan is available — call it with this workoutId, or pass \`exercises\` to start_workout next time to do both at once.`,
         workout,
       );
     },
