@@ -98,8 +98,7 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
             {/* Which greeting is right depends on the visitor's clock, not the
                 container's, so it settles on hydration alongside the
                 timestamps — see `useHydrated`. */}
-            {hydrated ? greeting() : "Hello"},{" "}
-            {profile.name.split(" ")[0]}
+            {hydrated ? greeting() : "Hello"}, {profile.name.split(" ")[0]}
           </h1>
           <p className="mt-2 text-slate-400">
             {insights.daysSinceLastWorkout === null
