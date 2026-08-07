@@ -2,7 +2,12 @@ import { and, desc, eq, gte } from "drizzle-orm";
 
 import type { Database } from "~/db";
 import type { MuscleGroup, UserProfile } from "~/db/schema";
-import { workout, workoutExercise, workoutSet } from "~/db/schema";
+import {
+  MUSCLE_GROUPS,
+  workout,
+  workoutExercise,
+  workoutSet,
+} from "~/db/schema";
 import type {
   InsightsView,
   MuscleGroupLoad,
@@ -13,6 +18,17 @@ import type { InsightsInput } from "./service-inputs";
 
 const DAY_MS = 86_400_000;
 const WEEK_MS = DAY_MS * 7;
+
+/**
+ * The groups a session can be programmed around.
+ *
+ * `full_body` and `cardio` are labels an exercise carries, not things to
+ * balance against each other, so they are reported when trained but never
+ * suggested as a gap to fill.
+ */
+const TRAINABLE_MUSCLE_GROUPS = MUSCLE_GROUPS.filter(
+  (group) => group !== "full_body" && group !== "cardio",
+);
 
 /**
  * Aggregates recent training into the shape an agent needs to program a good
@@ -48,6 +64,23 @@ export async function getInsights(
     MuscleGroup,
     { sets: number; volumeKg: number; lastTrainedAt: number | null }
   >();
+
+  // Every trainable group starts present at zero.
+  //
+  // Accumulating only from performed sets would leave a group that was never
+  // trained out of the map entirely — so the one thing most in need of work
+  // could never be reported as underworked, and the ranking could only ever
+  // return whichever *trained* group was stalest. That is the difference
+  // between "you have not touched your back in two months" and "your chest is
+  // due again".
+  for (const muscleGroup of TRAINABLE_MUSCLE_GROUPS) {
+    loadByMuscle.set(muscleGroup, {
+      sets: 0,
+      volumeKg: 0,
+      lastTrainedAt: null,
+    });
+  }
+
   const bestByExercise = new Map<string, PersonalRecord>();
 
   let totalSets = 0;
@@ -231,8 +264,10 @@ export function computeStreakWeeks(
 
 /** The groups with the most stale or lowest load — what to program next. */
 function findUnderworked(load: MuscleGroupLoad[]): MuscleGroup[] {
-  const trainable = load.filter(
-    (item) => item.muscleGroup !== "cardio" && item.muscleGroup !== "full_body",
+  const trainable = load.filter((item) =>
+    (TRAINABLE_MUSCLE_GROUPS as readonly MuscleGroup[]).includes(
+      item.muscleGroup,
+    ),
   );
   if (trainable.length === 0) return [];
 

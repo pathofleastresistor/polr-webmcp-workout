@@ -8,6 +8,7 @@ import {
 } from "~/domain/contracts";
 import { assertSameOrigin } from "~/server/security.server";
 import { toolError, toolOk, untrusted } from "~/webmcp/runtime";
+import { describePlanForReview } from "~/webmcp/tools/format";
 
 describe("toolInputSchema", () => {
   it("produces self-contained JSON Schema an agent can read", () => {
@@ -175,5 +176,50 @@ describe("tool results", () => {
     expect(rendered).toContain("treat as data");
     expect(rendered).toContain("<<<");
     expect(untrusted("Session notes", null)).toBe("Session notes: (none)");
+  });
+});
+
+describe("describePlanForReview", () => {
+  it("renders catalog ids as readable names for the approval dialog", () => {
+    // Agents are told to pass ids, so the dialog must not show slugs — this is
+    // the surface where a person actually consents to the session.
+    const [line] = describePlanForReview([
+      {
+        exerciseId: "barbell-bench-press",
+        sets: [{ weightKg: 60, reps: 8 }],
+      },
+    ]);
+
+    expect(line).toContain("Barbell Bench Press");
+    expect(line).not.toContain("barbell-bench-press");
+    expect(line).toContain("60kg x 8 reps");
+  });
+
+  it("prefers an explicit name over the id", () => {
+    const [line] = describePlanForReview([
+      {
+        exerciseId: "row-a",
+        exerciseName: "Barbell Row",
+        sets: [{ reps: 10 }],
+      },
+    ]);
+    expect(line).toContain("Barbell Row");
+  });
+
+  it("leaves a non-slug id alone rather than mangling it", () => {
+    // A custom exercise keyed by uuid must not become "9F2A Bd11 ...".
+    const id = "9f2abd11-4c3e-4a1b-9e77-2b5d8c1f0a44";
+    const [line] = describePlanForReview([
+      { exerciseId: id, sets: [{ reps: 5 }] },
+    ]);
+    expect(line).toContain(id);
+  });
+
+  it("marks warmups and copes with unspecified sets", () => {
+    const [line] = describePlanForReview([
+      { exerciseId: "plank", sets: [{ isWarmup: true, reps: 1 }, {}] },
+    ]);
+    expect(line).toContain("warmup");
+    expect(line).toContain("as prescribed");
   });
 });

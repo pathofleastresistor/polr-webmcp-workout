@@ -133,6 +133,15 @@ export async function startWorkout(
     );
   }
 
+  // Resolve any supplied plan *before* creating the session. An agent naming
+  // an exercise that does not exist is the expected failure here, and letting
+  // the row land first would leave an empty active workout behind — which then
+  // blocks every later start_workout with "a workout is already in progress",
+  // and the person has to find and discard it by hand.
+  if (input.exercises && input.exercises.length > 0) {
+    await resolvePlannedExercises(db, userId, input.exercises);
+  }
+
   const now = new Date();
   const id = newId();
 
@@ -147,7 +156,24 @@ export async function startWorkout(
     updatedAt: now,
   });
 
-  void actor;
+  // A plan supplied up front is applied here so "start a session that hits my
+  // weak points" is one call. Reusing replacePlan rather than duplicating the
+  // insert keeps exercise resolution, the set expansion and the ordering rules
+  // identical between this path and propose_workout_plan.
+  if (input.exercises && input.exercises.length > 0) {
+    return replacePlan(
+      db,
+      userId,
+      {
+        workoutId: id,
+        title: input.title,
+        notes: input.notes,
+        exercises: input.exercises,
+      },
+      actor,
+    );
+  }
+
   return getWorkoutDetail(db, userId, id);
 }
 

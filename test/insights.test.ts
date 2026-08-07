@@ -181,11 +181,19 @@ describe("getInsights", () => {
     const insights = await getInsights(db, userId, profile, { weeks: 4 });
 
     expect(insights.totalWorkouts).toBe(0);
+    expect(insights.totalSets).toBe(0);
     expect(insights.lastWorkoutAt).toBeNull();
     expect(insights.daysSinceLastWorkout).toBeNull();
-    expect(insights.muscleGroupLoad).toEqual([]);
-    expect(insights.underworkedMuscleGroups).toEqual([]);
     expect(insights.personalRecords).toEqual([]);
+
+    // Every trainable group is reported at zero rather than omitted, so an
+    // agent can see the gaps on day one and still program a first session.
+    // The dashboard keys its chart on totalSets, so it stays empty here.
+    expect(insights.muscleGroupLoad.length).toBeGreaterThan(0);
+    expect(insights.muscleGroupLoad.every((item) => item.sets === 0)).toBe(
+      true,
+    );
+    expect(insights.underworkedMuscleGroups.length).toBe(3);
   });
 
   it("scopes insights to the requesting user", async () => {
@@ -222,5 +230,79 @@ describe("getInsights", () => {
     expect(
       (await getInsights(db, userId, profile, { weeks: 8 })).totalWorkouts,
     ).toBe(0);
+  });
+});
+
+describe("underworked muscle groups", () => {
+  let db: Database;
+  let userId: string;
+  let profile: UserProfile;
+
+  beforeEach(async () => {
+    db = testDb();
+    await seedExercises(db);
+    const created = await createUser(db);
+    userId = created.id;
+    profile = created.profile;
+  });
+
+  /** Trains one exercise and closes the session, so it counts. */
+  const trainOnly = async (exerciseId: string) => {
+    const started = await startWorkout(db, userId, {}, "human");
+    const planned = await replacePlan(
+      db,
+      userId,
+      {
+        workoutId: started.id,
+        exercises: [
+          { exerciseId, sets: [{ weightKg: 60, reps: 5, isWarmup: false }] },
+        ],
+      },
+      "agent",
+    );
+    await logSet(
+      db,
+      userId,
+      {
+        workoutId: started.id,
+        workoutExerciseId: planned.exercises[0]!.id,
+        setIndex: 1,
+        status: "completed",
+      },
+      "human",
+    );
+    await finishWorkout(db, userId, { workoutId: started.id });
+  };
+
+  it("names groups never trained, not the least-recently trained one", async () => {
+    // Only chest (and triceps, as a secondary) has ever been trained. Legs and
+    // back have had zero sets, which is as underworked as it gets.
+    await trainOnly("bench-press");
+
+    const insights = await getInsights(db, userId, profile, { weeks: 8 });
+
+    expect(insights.underworkedMuscleGroups).not.toContain("chest");
+    expect(insights.underworkedMuscleGroups.length).toBe(3);
+    // Any three untrained groups will do; these are the obvious ones.
+    expect(insights.underworkedMuscleGroups).toEqual(
+      expect.arrayContaining(["back"]),
+    );
+  });
+
+  it("reports never-trained groups as zero rather than omitting them", async () => {
+    await trainOnly("bench-press");
+
+    const insights = await getInsights(db, userId, profile, { weeks: 8 });
+    const back = insights.muscleGroupLoad.find((i) => i.muscleGroup === "back");
+
+    // An agent cannot reason about a gap it is never shown.
+    expect(back).toBeDefined();
+    expect(back?.sets).toBe(0);
+    expect(back?.daysSinceLastTrained).toBeNull();
+  });
+
+  it("still suggests something for a brand-new account", async () => {
+    const insights = await getInsights(db, userId, profile, { weeks: 8 });
+    expect(insights.underworkedMuscleGroups.length).toBe(3);
   });
 });
