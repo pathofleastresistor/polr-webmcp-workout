@@ -23,7 +23,10 @@ export default async function handleRequest(
   routerContext: EntryContext,
   loadContext: RouterContextProvider,
 ): Promise<Response> {
-  const nonce = loadContext.get(nonceContext);
+  // Empty on the one path that skips middleware entirely — an unmatched URL,
+  // rendered through the root error boundary. Normalised to undefined so the
+  // attribute is omitted rather than emitted blank.
+  const nonce = loadContext.get(nonceContext) || undefined;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), ABORT_DELAY);
