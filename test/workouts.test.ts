@@ -153,12 +153,12 @@ describe("workout lifecycle", () => {
     ).rejects.toThrow(/skips ahead/);
   });
 
-  it("refuses a second active workout", async () => {
+  it("refuses a second active workout when asked to", async () => {
     await startWorkout(db, userId, { title: "First" }, "human");
 
-    await expect(startWorkout(db, userId, {}, "agent")).rejects.toMatchObject({
-      code: "workout_already_active",
-    });
+    await expect(
+      startWorkout(db, userId, { ifActive: "error" }, "agent"),
+    ).rejects.toMatchObject({ code: "workout_already_active" });
   });
 
   it("refuses to replace a plan once sets are logged", async () => {
@@ -459,5 +459,144 @@ describe("starting a workout with a plan in one call", () => {
     // A half-created session would block every later start_workout with
     // "a workout is already in progress" — the worst possible failure mode.
     expect(await getActiveWorkout(db, userId)).toBeNull();
+  });
+});
+
+describe("starting a workout while one is still running", () => {
+  let db: Database;
+  let userId: string;
+
+  beforeEach(async () => {
+    db = testDb();
+    await seedExercises(db);
+    userId = (await createUser(db)).id;
+  });
+
+  /** A session with one completed set, i.e. real work worth keeping. */
+  const startAndLog = async (title: string) => {
+    const started = await startWorkout(
+      db,
+      userId,
+      {
+        title,
+        exercises: [
+          {
+            exerciseId: "bench-press",
+            sets: [
+              { weightKg: 60, reps: 8, isWarmup: false },
+              { weightKg: 60, reps: 8, isWarmup: false },
+            ],
+          },
+        ],
+      },
+      "human",
+    );
+
+    await logSet(
+      db,
+      userId,
+      {
+        workoutId: started.id,
+        workoutExerciseId: started.exercises[0]!.id,
+        setIndex: 1,
+        status: "completed",
+      },
+      "human",
+    );
+
+    return started;
+  };
+
+  it("finishes the running session by default, keeping what was logged", async () => {
+    const yesterday = await startAndLog("Left running");
+
+    // "Start my workout" is one sentence, so it is one call: the stale session
+    // is closed out and the new one begins, with the plan already applied.
+    const started = await startWorkout(
+      db,
+      userId,
+      {
+        title: "Leg day",
+        exercises: [
+          { exerciseId: "back-squat", sets: [{ reps: 5, isWarmup: false }] },
+        ],
+      },
+      "agent",
+    );
+
+    const closed = await getWorkoutDetail(db, userId, yesterday.id);
+    expect(closed.status).toBe("completed");
+    // Filed, not dropped: the set they actually did still counts.
+    expect(closed.completedSets).toBe(1);
+
+    expect(started.status).toBe("active");
+    expect(started.title).toBe("Leg day");
+    expect(started.exercises).toHaveLength(1);
+    expect((await getActiveWorkout(db, userId))?.id).toBe(started.id);
+  });
+
+  it("discards the running session when nothing was logged in it", async () => {
+    const empty = await startWorkout(
+      db,
+      userId,
+      { title: "Never used" },
+      "human",
+    );
+
+    const started = await startWorkout(
+      db,
+      userId,
+      { title: "Leg day" },
+      "agent",
+    );
+
+    // Filing an empty session would put a workout in the history that never
+    // happened, and count it toward the weekly target.
+    const closed = await getWorkoutDetail(db, userId, empty.id);
+    expect(closed.status).toBe("abandoned");
+    expect(
+      await listWorkouts(db, userId, { limit: 10, status: "completed" }),
+    ).toHaveLength(0);
+
+    expect((await getActiveWorkout(db, userId))?.id).toBe(started.id);
+  });
+
+  it("discards logged work only when explicitly told to", async () => {
+    const running = await startAndLog("Bailed on this");
+
+    await startWorkout(db, userId, { ifActive: "discard" }, "agent");
+
+    const closed = await getWorkoutDetail(db, userId, running.id);
+    expect(closed.status).toBe("abandoned");
+    expect(
+      await listWorkouts(db, userId, { limit: 10, status: "completed" }),
+    ).toHaveLength(0);
+  });
+
+  it("leaves the running session alone when the new plan is invalid", async () => {
+    const running = await startAndLog("Still going");
+
+    await expect(
+      startWorkout(
+        db,
+        userId,
+        {
+          exercises: [
+            {
+              exerciseName: "Nonexistent",
+              sets: [{ reps: 5, isWarmup: false }],
+            },
+          ],
+        },
+        "agent",
+      ),
+    ).rejects.toMatchObject({ code: "unknown_exercise" });
+
+    // Closing someone's session for a workout that then failed to start would
+    // be the worst outcome available, so the plan is resolved first.
+    expect((await getActiveWorkout(db, userId))?.id).toBe(running.id);
+    expect((await getWorkoutDetail(db, userId, running.id)).status).toBe(
+      "active",
+    );
   });
 });

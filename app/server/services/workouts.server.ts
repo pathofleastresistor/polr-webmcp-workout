@@ -123,23 +123,21 @@ export async function startWorkout(
   input: StartWorkoutInput,
   actor: Actor,
 ): Promise<WorkoutDetailView> {
-  // One session at a time. Returning the existing session rather than erroring
-  // would let an agent silently log into the wrong workout.
-  const existing = await getActiveWorkout(db, userId);
-  if (existing) {
-    throw conflict(
-      "workout_already_active",
-      `A workout ("${existing.title}") is already in progress. Finish it with finish_workout or discard it with cancel_workout before starting another.`,
-    );
-  }
-
-  // Resolve any supplied plan *before* creating the session. An agent naming
-  // an exercise that does not exist is the expected failure here, and letting
-  // the row land first would leave an empty active workout behind — which then
-  // blocks every later start_workout with "a workout is already in progress",
-  // and the person has to find and discard it by hand.
+  // Resolve any supplied plan *before* anything is written or closed. An agent
+  // naming an exercise that does not exist is the expected failure here, and
+  // doing this first is what makes that failure free: no empty active workout
+  // left behind to block every later start_workout, and no session of the
+  // person's closed out for a workout that then never began.
   if (input.exercises && input.exercises.length > 0) {
     await resolvePlannedExercises(db, userId, input.exercises);
+  }
+
+  // One session at a time. Never returning the existing session in place of a
+  // new one — that would let an agent silently log into the wrong workout — so
+  // the running one is dealt with explicitly first.
+  const existing = await getActiveWorkout(db, userId);
+  if (existing) {
+    await closeForRestart(db, userId, existing, input.ifActive ?? "finish");
   }
 
   const now = new Date();
@@ -586,6 +584,43 @@ async function requireEditableWorkout(
   }
 
   return row;
+}
+
+/**
+ * Clears the way for a new session.
+ *
+ * Which of finish/discard applies is decided here rather than by the caller,
+ * because it is a judgement about the person's history and it has to be the
+ * same one everywhere. Finishing wins whenever real work was logged: an
+ * abandoned session is excluded from insights entirely, so discarding sets they
+ * actually did would quietly rewrite their training record. A session with
+ * nothing logged is the opposite case — filing it would put an empty workout in
+ * the history and count it against their weekly target — so that one is
+ * discarded. Only an explicit "discard" drops logged sets, and the person
+ * approves that in the confirmation dialog before the call is made.
+ */
+async function closeForRestart(
+  db: Database,
+  userId: string,
+  existing: WorkoutDetailView,
+  mode: NonNullable<StartWorkoutInput["ifActive"]>,
+): Promise<void> {
+  if (mode === "error") {
+    throw conflict(
+      "workout_already_active",
+      `A workout ("${existing.title}") is already in progress. Call start_workout again with ifActive:"finish" to close it out and begin the new session in one step, or ifActive:"discard" to drop it without recording it.`,
+    );
+  }
+
+  if (mode === "discard" || existing.completedSets === 0) {
+    await cancelWorkout(db, userId, {
+      workoutId: existing.id,
+      reason: "Superseded by a new session.",
+    });
+    return;
+  }
+
+  await finishWorkout(db, userId, { workoutId: existing.id });
 }
 
 interface ResolvedExercise {

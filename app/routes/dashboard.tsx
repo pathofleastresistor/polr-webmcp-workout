@@ -58,7 +58,20 @@ export async function action({ request, context }: Route.ActionArgs) {
   const { db } = getAppContext(context);
 
   try {
-    const created = await startWorkout(db, user.id, {}, "human");
+    // `ifActive: "error"` keeps the button meaning what it looks like it means.
+    // A person clicking "Start a workout" is not asking to end one they have
+    // running — and they cannot be, because this button is replaced by "Resume"
+    // whenever there is one. The catch below covers the race where a session
+    // began in another tab after this page rendered.
+    // No `exercises`, which the tool contract does not allow and this button
+    // is entirely for: the person is choosing to build the session by hand
+    // rather than ask for one.
+    const created = await startWorkout(
+      db,
+      user.id,
+      { ifActive: "error" },
+      "human",
+    );
 
     await recordEvent(db, {
       userId: user.id,
@@ -124,10 +137,10 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
 
       <p className="mt-4 rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-sm text-slate-400">
         <span aria-hidden="true">✦</span> Try asking your agent:{" "}
-        <em className="text-slate-300">
-          &ldquo;Look at my recent training and start a session that hits what
-          I&apos;ve been neglecting.&rdquo;
-        </em>
+        <em className="text-slate-300">&ldquo;Start my workout.&rdquo;</em> It
+        will read what you have been neglecting, program the session, close out
+        anything you left running, and show you the whole thing to approve
+        before it saves.
       </p>
 
       <div className="mt-10 grid gap-8 lg:grid-cols-[2fr_1fr]">

@@ -54,15 +54,15 @@ Registered on every page, signed out:
 
 Signed in, everywhere:
 
-| Tool                    |                                                            |
-| ----------------------- | ---------------------------------------------------------- |
-| `whoami`                | Name, units, experience, goal, weekly target               |
-| `list_workouts`         | History with volume, sets, duration                        |
-| `get_workout`           | One session in full                                        |
-| `get_training_insights` | Volume per muscle group, staleness, streak, estimated 1RMs |
-| `search_exercises`      | Catalog lookup — returns the ids a plan needs              |
-| `get_active_workout`    | The session in progress and what is still pending          |
-| `start_workout`         | Begins a session and opens it                              |
+| Tool                    |                                                                              |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| `whoami`                | Name, units, experience, goal, weekly target                                 |
+| `list_workouts`         | History with volume, sets, duration                                          |
+| `get_workout`           | One session in full                                                          |
+| `get_training_insights` | Volume per muscle group, staleness, streak, estimated 1RMs                   |
+| `search_exercises`      | Catalog lookup — returns the ids a plan needs                                |
+| `get_active_workout`    | The session in progress and what is still pending                            |
+| `start_workout`         | Closes out whatever is running, begins a session with its plan, and opens it |
 
 On the workout page only, while the session is active:
 
@@ -76,9 +76,28 @@ On the workout page only, while the session is active:
 | `finish_workout`               | Close out and fold into history                       |
 | `cancel_workout`               | Discard without recording                             |
 
-A typical exchange: _"Look at what I've been neglecting and give me 45 minutes."_
-→ `get_training_insights` → `search_exercises` → `start_workout` →
-`propose_workout_plan` → you approve → `log_set` per set → `finish_workout`.
+A typical exchange is one sentence: _"Start my workout."_ →
+`get_training_insights` → `search_exercises` → `start_workout` with the plan
+inline → you approve once → `log_set` per set → `finish_workout`.
+
+That single `start_workout` call closes out a session you left running,
+creates the new one and fills it in. The plan is a **required** argument, so
+there is no way for an agent to start a blank session and hand the programming
+back to you — an empty workout is a UI control, the dashboard's "Start a
+workout" button, where choosing it is the whole meaning of the click. It has to
+work that way round: the
+planning tools register only on a workout's own page, so an agent standing on
+the dashboard cannot reach `propose_workout_plan` or `finish_workout` — the
+tools it would otherwise be told to call next do not exist at the moment it is
+told to call them. The confirmation dialog names the session being closed and
+lists the plan exercise by exercise, so the one approval still covers
+everything that is about to happen.
+
+Getting an agent to reliably _call_ it that way took four attempts, and the
+three that failed all looked correct in review.
+[Field notes](docs/webmcp-field-notes.md) records what broke, what it suggests
+about the WebMCP spec, and what we would tell anyone else writing tools against
+it.
 
 ---
 
@@ -266,14 +285,15 @@ in the server's dependency graph at runtime.
 npm test
 ```
 
-66 tests run against a real in-memory SQLite database rather than a mock,
+82 tests run against a real in-memory SQLite database rather than a mock,
 because much of the correctness lives in the SQL — unique indexes on `(workout,
 position)` and `(exercise, set_index)`, cascades, and transaction atomicity.
 Each test file gets its own database with the real migrations applied, so they
 exercise the schema production actually has.
 
-They cover the full lifecycle, the guards (no second active workout, no
-re-planning over logged sets, no editing a finished session), cross-user
+They cover the full lifecycle, the guards (no second active workout, how a
+running session is closed when a new one starts, no re-planning over logged
+sets, no editing a finished session), cross-user
 isolation, the insights math, the rate limiter, the origin checks, and the
 contract/JSON-Schema conversion.
 
