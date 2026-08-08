@@ -180,7 +180,7 @@ export function useAccountTools() {
     name: "get_active_workout",
     title: "Get the workout in progress",
     description:
-      "Returns the session currently in progress, including which sets are done and which are still pending, or null if there is none. Call this before logging anything: it gives you the workoutExerciseId values that log_set requires, and it is the cheapest way to re-sync after the person has been logging sets by hand.",
+      "Returns the session currently in progress, including which sets are done and which are still pending, or null if there is none. Call this before logging anything: it gives you the workoutExerciseId values that log_set requires, and it is the cheapest way to re-sync after the person has been logging sets by hand. A session that comes back with no exercises is one waiting to be programmed rather than a session that blocks you — fill it with propose_workout_plan if you are on its page, or replace it with start_workout from anywhere else.",
     schema: z.object({}),
     annotations: { readOnlyHint: true, untrustedContentHint: true },
     activityLabel: () => "Checked the active workout",
@@ -207,41 +207,86 @@ export function useAccountTools() {
     name: "start_workout",
     title: "Start a workout",
     description:
-      "Begins a new session and opens it in the browser. Pass `exercises` to start and populate it in one call — do that whenever the person asked for a workout rather than an empty session, because the planning tools only exist once the workout page is open, so from anywhere else this is the only way to fill one in. Omit `exercises` only if they explicitly want to build it themselves. Call get_training_insights and search_exercises first so the plan fits what they have been doing. Only one workout can be in progress at a time; if one already is, this returns an error naming it.",
+      'This is the whole of "start my workout": one call closes out whatever session is still running, begins the new one, applies the plan you pass in `exercises`, and opens it — the person approves all of it in a single dialog. Program it yourself first: get_training_insights names the undertrained muscle groups, and search_exercises turns those into ids. "Start a workout" with no further detail is a complete instruction, not an ambiguous one — do not ask the person what to train or which focus they want, because choosing that is the job they handed you and the approval dialog is where they get their say. An active session that is empty is not a reason to stop either: replace it with this call, or fill it with propose_workout_plan if you are already on its page. Pass ifActive:"error" only when you would rather ask before ending a session they have running.',
     schema: startWorkoutInput,
     annotations: { readOnlyHint: false, openWorldHint: false },
     activityLabel: (args) =>
-      args.exercises?.length
-        ? `Started "${args.title ?? "a workout"}" with ${args.exercises.length} exercise(s)`
-        : `Started "${args.title ?? "a workout"}"`,
+      `Started "${args.title ?? "a workout"}" with ${args.exercises.length} exercise(s)`,
     execute: async (args, client) => {
       // Starting a session is cheap and reversible (cancel_workout discards
       // it), but it changes what the person is looking at, so it is still
       // confirmed rather than done behind their back.
-      const planned = args.exercises ?? [];
+      const planned = args.exercises;
+
+      // What is already running decides what this call will close, and nobody
+      // can consent to that without being told which session it is. Read it
+      // here rather than from the page: start_workout is registered
+      // account-wide, so this often runs on a page that knows nothing about the
+      // session in progress.
+      const { active } = await apiFetch<{
+        workouts: WorkoutSummaryView[];
+        active: WorkoutDetailView | null;
+      }>(`/api/workouts${buildQuery({ limit: 1, status: "any" })}`, {
+        actor: "agent",
+      });
+
+      const mode = args.ifActive ?? "finish";
+
+      // Answer before prompting. The agent asked to be stopped in this case, so
+      // putting a dialog in front of the person only to fail the call behind it
+      // would spend their attention on a decision that was already made.
+      if (active && mode === "error") {
+        return toolError(
+          `"${active.title}" is already in progress (id ${active.id}), with ${active.completedSets} set(s) logged. Ask the person whether they are done with it, then call start_workout again with ifActive:"finish" to close it out and begin the new session in one step — or ifActive:"discard" to drop it without recording it.`,
+          "workout_already_active",
+        );
+      }
+
+      const closing = mode === "error" ? null : active;
+      // Mirrors the server's rule: an empty session is dropped rather than
+      // filed, so it never lands in their history. Stated here only to describe
+      // it accurately — the server is what decides.
+      const discarding =
+        closing !== null && (mode === "discard" || closing.completedSets === 0);
+
+      const details = [
+        ...(closing
+          ? [
+              discarding
+                ? `First: discard "${closing.title}" — ${closing.completedSets} logged set(s) will not count toward your history.`
+                : `First: finish "${closing.title}" and file it into your history (${closing.completedSets} logged set(s)).`,
+            ]
+          : []),
+        // The whole plan is listed, exercise by exercise: approving a session
+        // you cannot see is not consent.
+        ...describePlanForReview(planned),
+      ];
 
       const approved = await requestConfirmation(
         {
           toolName: "start_workout",
-          title: planned.length
-            ? args.title
-              ? `Start "${args.title}"?`
-              : "Start this workout?"
-            : "Start a new workout?",
-          description: planned.length
-            ? "Your agent put together the session below. Nothing is saved until you accept it."
-            : "Your agent wants to begin a new empty session and open it in this tab.",
-          // The whole plan is listed, exercise by exercise: approving a session
-          // you cannot see is not consent.
-          details: planned.length
-            ? describePlanForReview(planned)
+          title: closing
+            ? `Close "${closing.title}" and start ${args.title ? `"${args.title}"` : "this workout"}?`
             : args.title
-              ? [`Title: ${args.title}`]
-              : undefined,
-          confirmLabel: planned.length
-            ? "Start with this plan"
-            : "Start workout",
-          tone: "neutral",
+              ? `Start "${args.title}"?`
+              : "Start this workout?",
+          description: [
+            closing
+              ? "Only one session can run at a time, so the one in progress is closed out first."
+              : null,
+            "Your agent put together the session below. Nothing is saved until you accept it.",
+          ]
+            .filter(Boolean)
+            .join(" "),
+          details,
+          confirmLabel: closing ? "Close it and start" : "Start with this plan",
+          // Finishing loses nothing, and discarding an empty session loses
+          // nothing either. Discarding sets the person actually did is the one
+          // case that warrants the red button.
+          tone:
+            closing !== null && discarding && closing.completedSets > 0
+              ? ("danger" as const)
+              : ("neutral" as const),
         },
         client,
       );
@@ -262,15 +307,12 @@ export function useAccountTools() {
       await navigate(`/workout/${workout.id}`);
       await revalidator.revalidate();
 
-      if (workout.exercises.length > 0) {
-        return toolOk(
-          `Started "${workout.title}" (id ${workout.id}) and opened it with the plan applied.\n${describeWorkoutDetail(workout)}`,
-          workout,
-        );
-      }
+      const closed = closing
+        ? `Closed "${closing.title}" first (${discarding ? "discarded" : "finished and filed into history"}). `
+        : "";
 
       return toolOk(
-        `Started "${workout.title}" (id ${workout.id}) and opened it. It has no exercises yet. The workout page is now open, so propose_workout_plan is available — call it with this workoutId, or pass \`exercises\` to start_workout next time to do both at once.`,
+        `${closed}Started "${workout.title}" (id ${workout.id}) and opened it with the plan applied. The workout page is open, so log_set is now available — read the ids below and log each set as they call it out.\n${describeWorkoutDetail(workout)}`,
         workout,
       );
     },

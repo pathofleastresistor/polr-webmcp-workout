@@ -3,6 +3,7 @@ import { handleApiRequest } from "~/server/api-handler.server";
 import { recordEvent } from "~/server/services/audit.server";
 import {
   getActiveWorkout,
+  getWorkoutDetail,
   listWorkouts,
   startWorkout,
 } from "~/server/services/workouts.server";
@@ -30,7 +31,28 @@ export async function action({ request, context }: Route.ActionArgs) {
   return handleApiRequest(request, context, {
     schema: startWorkoutInput,
     handle: async ({ input, user, db, actor }) => {
+      // Read before starting, because starting may close it. A session that
+      // ended as a side effect of this call is exactly the thing the person
+      // needs the activity log to tell them about.
+      const previous = await getActiveWorkout(db, user.id);
+
       const created = await startWorkout(db, user.id, input, actor);
+
+      if (previous && previous.id !== created.id) {
+        // Re-read rather than re-deriving whether it was finished or discarded:
+        // that rule lives in the service, and a second copy of it here would be
+        // free to drift into logging something that did not happen.
+        const closed = await getWorkoutDetail(db, user.id, previous.id);
+        const finished = closed.status === "completed";
+
+        await recordEvent(db, {
+          userId: user.id,
+          workoutId: closed.id,
+          toolName: finished ? "finish_workout" : "cancel_workout",
+          actor,
+          summary: `${finished ? "Finished" : "Discarded"} "${closed.title}" to start a new session`,
+        });
+      }
 
       await recordEvent(db, {
         userId: user.id,

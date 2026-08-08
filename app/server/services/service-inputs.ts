@@ -11,7 +11,7 @@ import type {
   proposePlanInput,
   removeExerciseInput,
   searchExercisesInput,
-  startWorkoutInput,
+  startWorkoutServiceInput,
   updateProfileInput,
 } from "~/domain/contracts";
 
@@ -23,7 +23,8 @@ import type {
 export type ListWorkoutsInput = z.infer<typeof listWorkoutsInput>;
 export type SearchExercisesInput = z.infer<typeof searchExercisesInput>;
 export type InsightsInput = z.infer<typeof insightsInput>;
-export type StartWorkoutInput = z.infer<typeof startWorkoutInput>;
+/** Wider than the tool contract by one case — see startWorkoutServiceInput. */
+export type StartWorkoutInput = z.infer<typeof startWorkoutServiceInput>;
 export type ProposePlanInput = z.infer<typeof proposePlanInput>;
 export type AddExerciseInput = z.infer<typeof addExerciseInput>;
 export type RemoveExerciseInput = z.infer<typeof removeExerciseInput>;

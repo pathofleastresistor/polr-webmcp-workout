@@ -4,6 +4,8 @@ import {
   logSetInput,
   proposePlanInput,
   searchExercisesInput,
+  startWorkoutInput,
+  startWorkoutServiceInput,
   toolInputSchema,
 } from "~/domain/contracts";
 import { assertSameOrigin } from "~/server/security.server";
@@ -53,6 +55,31 @@ describe("toolInputSchema", () => {
     expect(schema.properties.weightKg?.description).toMatch(/kilograms/i);
   });
 
+  it("tells an agent that start_workout can clear a running session", () => {
+    // The schema is the only channel through which an agent learns this. Left
+    // undocumented, start_workout reads as a tool that simply fails whenever a
+    // session was left open — and the tool that would clear it, finish_workout,
+    // is not registered on the page the agent is standing on.
+    const schema = toolInputSchema(startWorkoutInput) as {
+      properties: Record<string, { description?: string; enum?: string[] }>;
+      required?: string[];
+    };
+
+    // Omitting it has to be the good path, not a missing-argument error.
+    expect(schema.required ?? []).not.toContain("ifActive");
+    expect(schema.properties.ifActive?.enum).toEqual(
+      expect.arrayContaining(["finish", "discard", "error"]),
+    );
+    expect(schema.properties.ifActive?.description).toMatch(/finish/i);
+
+    // The plan is required *in the schema*, which is the only place an agent
+    // looks before deciding what to send. This assertion is the whole fix:
+    // as an optional field it was skipped, and as a refinement it was invisible
+    // here and got argued around at runtime.
+    expect(schema.required ?? []).toContain("exercises");
+    expect(schema.properties.exercises?.description).toBeTruthy();
+  });
+
   it("inlines nested structures rather than emitting $refs", () => {
     const json = JSON.stringify(toolInputSchema(proposePlanInput));
     expect(json).not.toContain("$ref");
@@ -72,6 +99,33 @@ describe("input validation", () => {
         setIndex: 1,
       }).status,
     ).toBe("completed");
+  });
+
+  it("gives start_workout no way to begin an empty session", () => {
+    // Two weaker forms of this rule lost to a real agent. Optional-plus-
+    // documentation produced a title and nothing else. A `.refine` demanding
+    // either a plan or an explicit opt-in produced the opt-in, because a
+    // refinement is invisible in the JSON Schema the agent reads before
+    // calling — it met the rule only as a runtime error and took the cheapest
+    // way out. Required is the version it sees in advance.
+    expect(
+      startWorkoutInput.safeParse({ title: "Evening workout" }).success,
+    ).toBe(false);
+
+    // The escape hatch the agent previously reached for must not exist.
+    expect(startWorkoutInput.safeParse({ startEmpty: true }).success).toBe(
+      false,
+    );
+
+    expect(
+      startWorkoutInput.safeParse({
+        exercises: [{ exerciseId: "bench-press", sets: [{ reps: 8 }] }],
+      }).success,
+    ).toBe(true);
+
+    // The service is one case wider on purpose: the dashboard button creates a
+    // blank session, and it calls the service rather than this contract.
+    expect(startWorkoutServiceInput.safeParse({}).success).toBe(true);
   });
 
   it("rejects out-of-range and malformed values", () => {

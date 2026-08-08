@@ -158,7 +158,8 @@ export const proposePlanInput = z.object({
 });
 export type ProposePlanInput = z.infer<typeof proposePlanInput>;
 
-export const startWorkoutInput = z.object({
+/** Everything about starting a session except the plan itself. */
+const startWorkoutFields = z.object({
   title: freeText(80)
     .optional()
     .describe(
@@ -166,21 +167,53 @@ export const startWorkoutInput = z.object({
     ),
   notes: freeText(1000).optional(),
   /**
-   * Lets a session be started and planned in one call.
+   * Lets "start my workout" stay one call when a session was never closed out.
    *
-   * Without this, an agent on the dashboard has to call start_workout and then
-   * propose_workout_plan — but the planning tools only register once the
-   * workout page is open, so the tool it is told to call next does not exist
-   * at the moment it is told to call it.
+   * Only one workout can be active at a time, and the previous behaviour was to
+   * refuse outright. But the tool that clears the way — finish_workout —
+   * registers only on that workout's own page, so recovering from a session
+   * left running yesterday meant a navigation the agent had no reason to know
+   * it needed. In practice it just reported the error and stopped.
    */
-  exercises: z
-    .array(plannedExerciseSchema)
-    .min(1)
-    .max(20)
+  ifActive: z
+    .enum(["finish", "discard", "error"])
     .optional()
     .describe(
-      "Optional plan to apply immediately, same shape as propose_workout_plan. Pass this when the person asked for a workout rather than an empty session — it starts and populates in one step, which is the only way to do both from the dashboard.",
+      "What to do about a session that is already in progress. Omitting it means 'finish', which is what a person means when they ask to start a workout without mentioning the old one: the running session is closed out and filed into history, then the new one begins. A running session with nothing logged is discarded rather than filed, so an empty session never lands in their history. 'discard' always abandons it, recording nothing. 'error' refuses instead — pass that when you would rather ask the person before ending what they have running.",
     ),
+});
+
+const plannedExercises = z.array(plannedExerciseSchema).min(1).max(20);
+
+/**
+ * What an agent may ask for: a session *and* the plan to fill it with. There
+ * is deliberately no way to express "start an empty one".
+ *
+ * Two weaker versions of this rule failed against a real agent, and the way
+ * they failed is the reason for this one. Making `exercises` optional and
+ * documenting that it should almost always be passed produced a title and
+ * nothing else — an optional field reads as safe to skip. Adding a `.refine`
+ * that demanded either a plan or an explicit opt-in produced the opt-in: a
+ * refinement does not appear in the JSON Schema, so the agent only met the
+ * rule as a runtime error and satisfied it the cheapest way available.
+ *
+ * Required is the only form of this the agent reads *before* it calls. The
+ * blank session survives as a UI control — the dashboard's "Start a workout"
+ * button — where the person choosing it is the whole meaning of the click.
+ */
+export const startWorkoutInput = startWorkoutFields.extend({
+  exercises: plannedExercises.describe(
+    "The plan to start the session with, same shape as propose_workout_plan. Required: this tool starts a programmed workout, and there is no way to begin an empty one. Resolve the exercises with search_exercises and read get_training_insights first so the plan fits what the person has been doing. If they truly want a blank session to fill in themselves, say so and let them press 'Start a workout' on the dashboard.",
+  ),
+});
+
+/**
+ * What the service accepts, which is one case wider: the dashboard button
+ * creates a blank session on purpose, and it calls the service directly rather
+ * than going through the tool contract above.
+ */
+export const startWorkoutServiceInput = startWorkoutFields.extend({
+  exercises: plannedExercises.optional(),
 });
 
 export const addExerciseInput = z.object({
