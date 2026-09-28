@@ -1,4 +1,4 @@
-export type RateLimitBucket = "TOOL_RATE_LIMIT" | "AUTH_RATE_LIMIT";
+export type RateLimitBucket = "TOOL_RATE_LIMIT" | "ANON_RATE_LIMIT";
 
 interface BucketPolicy {
   /** Requests allowed per window. */
@@ -13,7 +13,7 @@ interface BucketPolicy {
  */
 const POLICIES: Record<RateLimitBucket, BucketPolicy> = {
   TOOL_RATE_LIMIT: { limit: 120, windowMs: 60_000 },
-  AUTH_RATE_LIMIT: { limit: 20, windowMs: 60_000 },
+  ANON_RATE_LIMIT: { limit: 20, windowMs: 60_000 },
 };
 
 interface Counter {
@@ -106,7 +106,7 @@ export function rateLimitKey(request: Request, userId: string | null): string {
  *
  * Behind a reverse proxy (Caddy, nginx, Traefik) `X-Forwarded-For` carries the
  * chain — without this, every anonymous request shares the key "unknown" and
- * the auth rate limit becomes one global bucket rather than per-client.
+ * the anonymous rate limit becomes one global bucket rather than per-client.
  *
  * The *rightmost* entry is used, not the leftmost. A client can prepend
  * anything it likes to `X-Forwarded-For`; the proxy appends the address it

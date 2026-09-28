@@ -9,9 +9,5 @@ import { beforeAll } from "vitest";
  */
 beforeAll(() => {
   process.env.APP_URL ??= "https://spotter.example";
-  process.env.BETTER_AUTH_SECRET ??=
-    "test-secret-at-least-32-characters-long!!";
-  process.env.GOOGLE_CLIENT_ID ??= "test-client-id";
-  process.env.GOOGLE_CLIENT_SECRET ??= "test-client-secret";
   process.env.DATABASE_PATH ??= ":memory:";
 });

@@ -10,7 +10,7 @@ import {
 
 /**
  * Timestamps are stored as epoch milliseconds so Drizzle hands back real `Date`
- * objects on both the auth tables (which Better Auth requires) and our own.
+ * objects.
  */
 const timestampMs = (column: string) =>
   integer(column, { mode: "timestamp_ms" });
@@ -26,86 +26,26 @@ const updatedAt = () =>
     .default(sql`(unixepoch() * 1000)`);
 
 /* -------------------------------------------------------------------------- */
-/* Better Auth core tables                                                    */
+/* Identity                                                                   */
 /* -------------------------------------------------------------------------- */
-/*
- * Field names mirror Better Auth's `getAuthTables()` contract exactly. The
- * Drizzle adapter resolves columns by *property* name, so the camelCase keys
- * below are load-bearing even though the SQL columns are snake_case.
- */
 
+/**
+ * A person is their private link: `/w/<key>`. There is no name, email or
+ * password — whoever holds the link is the owner.
+ *
+ * Only a SHA-256 of the key is stored, so a copy of the database does not hand
+ * out working links. The key has 128 bits of entropy, which is why a fast,
+ * unsalted hash is enough here: there is nothing to brute-force.
+ *
+ * `keyHash` is null only for accounts created before links existed; those are
+ * unreachable until `npm run link` mints one.
+ */
 export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  emailVerified: integer("email_verified", { mode: "boolean" })
-    .notNull()
-    .default(false),
-  image: text("image"),
+  keyHash: text("key_hash").unique(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
-
-export const session = sqliteTable(
-  "session",
-  {
-    id: text("id").primaryKey(),
-    expiresAt: timestampMs("expires_at").notNull(),
-    token: text("token").notNull().unique(),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-    ipAddress: text("ip_address"),
-    userAgent: text("user_agent"),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-  },
-  (table) => [
-    index("session_user_id_idx").on(table.userId),
-    index("session_expires_at_idx").on(table.expiresAt),
-  ],
-);
-
-export const account = sqliteTable(
-  "account",
-  {
-    id: text("id").primaryKey(),
-    accountId: text("account_id").notNull(),
-    providerId: text("provider_id").notNull(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    accessToken: text("access_token"),
-    refreshToken: text("refresh_token"),
-    idToken: text("id_token"),
-    accessTokenExpiresAt: timestampMs("access_token_expires_at"),
-    refreshTokenExpiresAt: timestampMs("refresh_token_expires_at"),
-    scope: text("scope"),
-    password: text("password"),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (table) => [
-    index("account_user_id_idx").on(table.userId),
-    uniqueIndex("account_provider_account_idx").on(
-      table.providerId,
-      table.accountId,
-    ),
-  ],
-);
-
-export const verification = sqliteTable(
-  "verification",
-  {
-    id: text("id").primaryKey(),
-    identifier: text("identifier").notNull(),
-    value: text("value").notNull(),
-    expiresAt: timestampMs("expires_at").notNull(),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (table) => [index("verification_identifier_idx").on(table.identifier)],
-);
 
 /* -------------------------------------------------------------------------- */
 /* Product tables                                                             */
@@ -135,13 +75,6 @@ export const userProfile = sqliteTable("user_profile", {
   goal: text("goal"),
   timezone: text("timezone").notNull().default("UTC"),
   weeklyTargetSessions: integer("weekly_target_sessions").notNull().default(3),
-  /**
-   * Marks a throwaway account minted by /demo/start. Sessions belonging to one
-   * are rejected whenever demo mode is off, so turning DEMO_MODE off on a
-   * deployment that previously ran a demo revokes those logins rather than
-   * leaving them valid against the same signing secret.
-   */
-  isDemo: integer("is_demo", { mode: "boolean" }).notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -363,9 +296,6 @@ export const workoutSetRelations = relations(workoutSet, ({ one }) => ({
 
 export const schema = {
   user,
-  session,
-  account,
-  verification,
   userProfile,
   exercise,
   workout,

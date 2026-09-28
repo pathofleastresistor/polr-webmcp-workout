@@ -16,8 +16,13 @@
 	# The app sets its own CSP, HSTS, frame and referrer headers per response;
 	# duplicating them here would only risk the two drifting apart.
 
+	# The private link in the path is a credential, so it is redacted before
+	# anything is written to the access log.
 	log {
 		output stdout
-		format console
+		format filter {
+			request>uri regexp ^/w/[^/.?]+ /w/REDACTED
+			wrap console
+		}
 	}
 }

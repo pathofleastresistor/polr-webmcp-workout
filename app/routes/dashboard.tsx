@@ -2,9 +2,12 @@ import { Form, Link, redirect, useNavigation } from "react-router";
 
 import { AppShell } from "~/components/AppShell";
 import { InsightsPanel } from "~/components/InsightsPanel";
+import { PrivateLink } from "~/components/PrivateLink";
 import { WorkoutHistory } from "~/components/WorkoutHistory";
-import { getAppContext } from "~/server/context";
+import { useLinkPath } from "~/lib/link";
+import { requireUser } from "~/server/access.server";
 import { readActor } from "~/server/api-handler.server";
+import { getAppContext } from "~/server/context";
 import { listRecentEvents, recordEvent } from "~/server/services/audit.server";
 import { toErrorResponse } from "~/server/services/errors";
 import { getInsights } from "~/server/services/insights.server";
@@ -13,18 +16,17 @@ import {
   listWorkouts,
   startWorkout,
 } from "~/server/services/workouts.server";
-import { requireUser } from "~/server/session.server";
 import { useAccountTools } from "~/webmcp/tools/useAccountTools";
 
 import type { Route } from "./+types/dashboard";
 
 export function meta(): Route.MetaDescriptors {
-  return [{ title: "Dashboard — Spotter" }];
+  return [{ title: "Spotter" }];
 }
 
-export async function loader({ request, context }: Route.LoaderArgs) {
+export async function loader({ request, context, params }: Route.LoaderArgs) {
   const user = await requireUser(request, context);
-  const { db } = getAppContext(context);
+  const { db, config } = getAppContext(context);
 
   const [workouts, active, insights, events] = await Promise.all([
     listWorkouts(db, user.id, { limit: 10, status: "completed" }),
@@ -34,18 +36,8 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   ]);
 
   return {
-    demoMode: getAppContext(context).config.demoMode,
-    profile: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      image: user.image,
-      unitSystem: user.profile.unitSystem,
-      experienceLevel: user.profile.experienceLevel,
-      goal: user.profile.goal,
-      timezone: user.profile.timezone,
-      weeklyTargetSessions: user.profile.weeklyTargetSessions,
-    },
+    url: `${config.appUrl}/w/${params.key}`,
+    unitSystem: user.profile.unitSystem,
     workouts,
     active,
     insights,
@@ -53,9 +45,10 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   };
 }
 
-export async function action({ request, context }: Route.ActionArgs) {
+export async function action({ request, context, params }: Route.ActionArgs) {
   const user = await requireUser(request, context);
   const { db } = getAppContext(context);
+  const workoutPath = (id: string) => `/w/${params.key}/workout/${id}`;
 
   try {
     // `ifActive: "error"` keeps the button meaning what it looks like it means.
@@ -63,9 +56,6 @@ export async function action({ request, context }: Route.ActionArgs) {
     // running — and they cannot be, because this button is replaced by "Resume"
     // whenever there is one. The catch below covers the race where a session
     // began in another tab after this page rendered.
-    // No `exercises`, which the tool contract does not allow and this button
-    // is entirely for: the person is choosing to build the session by hand
-    // rather than ask for one.
     const created = await startWorkout(
       db,
       user.id,
@@ -81,44 +71,50 @@ export async function action({ request, context }: Route.ActionArgs) {
       summary: `Started "${created.title}"`,
     });
 
-    return redirect(`/workout/${created.id}`);
+    return redirect(workoutPath(created.id));
   } catch (error) {
     // A session is already running — send them to it rather than erroring out.
     const active = await getActiveWorkout(db, user.id);
-    if (active) return redirect(`/workout/${active.id}`);
+    if (active) return redirect(workoutPath(active.id));
     return toErrorResponse(error);
   }
 }
 
 export default function Dashboard({ loaderData }: Route.ComponentProps) {
-  const { profile, workouts, active, insights, events, demoMode } = loaderData;
+  const { url, unitSystem, workouts, active, insights, events } = loaderData;
+  const linkPath = useLinkPath();
   const navigation = useNavigation();
-  const starting = navigation.formAction === "/dashboard";
+  const starting = navigation.state === "submitting";
 
-  // Registers the read tools plus start_workout for as long as the person is
-  // signed in and on this page.
+  // Registers the read tools plus start_workout while this page is open.
   useAccountTools();
 
+  const isNew = active === null && workouts.length === 0;
+
   return (
-    <AppShell user={profile} demoMode={demoMode}>
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <AppShell>
+      {isNew && (
+        <div className="mb-12">
+          <PrivateLink url={url} title="Bookmark this page">
+            This link is your account. There is no sign-in and no way to get it
+            back, so save it somewhere. Anyone who has it can see and change
+            your workouts.
+          </PrivateLink>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-end justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            {greeting()}, {profile.name.split(" ")[0]}
-          </h1>
-          <p className="mt-2 text-slate-400">
-            {insights.daysSinceLastWorkout === null
-              ? "No sessions logged yet. Start one, then ask your agent to program it."
-              : insights.daysSinceLastWorkout === 0
-                ? "You trained today."
-                : `Last session ${insights.daysSinceLastWorkout} day(s) ago.`}
+          <h1 className="display">{headline(insights.daysSinceLastWorkout)}</h1>
+          <p className="mt-2 text-ink-muted">
+            Start one here, or ask your agent to plan it.
           </p>
         </div>
 
         {active ? (
           <Link
-            to={`/workout/${active.id}`}
-            className="rounded-xl bg-amber-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-amber-300"
+            to={linkPath(`/workout/${active.id}`)}
+            className="btn btn-primary"
           >
             Resume &ldquo;{active.title}&rdquo;
           </Link>
@@ -127,7 +123,7 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
             <button
               type="submit"
               disabled={starting}
-              className="rounded-xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-400 disabled:opacity-60"
+              className="btn btn-primary"
             >
               {starting ? "Starting…" : "Start a workout"}
             </button>
@@ -135,46 +131,31 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
         )}
       </div>
 
-      <p className="mt-4 rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-sm text-slate-400">
-        <span aria-hidden="true">✦</span> Try asking your agent:{" "}
-        <em className="text-slate-300">&ldquo;Start my workout.&rdquo;</em> It
-        will read what you have been neglecting, program the session, close out
-        anything you left running, and show you the whole thing to approve
-        before it saves.
-      </p>
-
-      <div className="mt-10 grid gap-8 lg:grid-cols-[2fr_1fr]">
-        <div className="space-y-8">
-          <InsightsPanel insights={insights} unitSystem={profile.unitSystem} />
-          <WorkoutHistory workouts={workouts} unitSystem={profile.unitSystem} />
+      <div className="mt-12 grid gap-12 lg:grid-cols-[2fr_1fr]">
+        <div className="space-y-12">
+          {insights.totalWorkouts > 0 && (
+            <InsightsPanel insights={insights} unitSystem={unitSystem} />
+          )}
+          <WorkoutHistory workouts={workouts} unitSystem={unitSystem} />
         </div>
 
         <aside>
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
-            Activity log
-          </h2>
-          <p className="mt-1 text-xs text-slate-500">
-            Everything done on your account, by you or your agent.
-          </p>
+          <h2 className="title">Activity</h2>
+          <p className="caption mt-1">What you and your agent have done.</p>
           {events.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-500">Nothing recorded yet.</p>
+            <p className="mt-4 text-ink-muted">Nothing yet.</p>
           ) : (
-            <ol className="mt-4 space-y-3">
+            <ol className="mt-4 divide-y divide-line">
               {events.map((event) => (
-                <li
-                  key={event.id}
-                  className="rounded-lg border border-slate-800 bg-slate-900/40 p-3"
-                >
-                  <p className="text-sm text-slate-200">{event.summary}</p>
-                  <p className="mt-1 text-xs text-slate-500">
+                <li key={event.id} className="py-3">
+                  <p>{event.summary}</p>
+                  <p className="caption mt-0.5">
                     <span
                       className={
-                        event.actor === "agent"
-                          ? "text-sky-400"
-                          : "text-slate-400"
+                        event.actor === "agent" ? "text-sky-text" : undefined
                       }
                     >
-                      {event.actor === "agent" ? "your agent" : "you"}
+                      {event.actor === "agent" ? "Your agent" : "You"}
                     </span>{" "}
                     · {new Date(event.createdAt).toLocaleString()}
                   </p>
@@ -188,9 +169,9 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
   );
 }
 
-function greeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
+function headline(daysSince: number | null): string {
+  if (daysSince === null) return "No workouts yet";
+  if (daysSince === 0) return "You trained today";
+  if (daysSince === 1) return "Last workout yesterday";
+  return `Last workout ${daysSince} days ago`;
 }

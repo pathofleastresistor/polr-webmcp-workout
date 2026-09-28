@@ -16,6 +16,7 @@ import type {
   WorkoutSummaryView,
 } from "~/domain/types";
 import { apiFetch, buildQuery } from "~/lib/api-client";
+import { useLinkPath } from "~/lib/link";
 
 import { useWebMcp } from "../provider";
 import { toolError, toolOk, untrusted } from "../runtime";
@@ -28,7 +29,7 @@ import {
 } from "./format";
 
 /**
- * Tools available everywhere once the person is signed in.
+ * Tools available on every page under the person's link.
  *
  * These are the agent's read surface plus the one action that starts a session.
  * Everything that edits a workout lives in `useWorkoutTools`, registered only
@@ -37,14 +38,15 @@ import {
  */
 export function useAccountTools() {
   const navigate = useNavigate();
+  const linkPath = useLinkPath();
   const revalidator = useRevalidator();
   const { requestConfirmation } = useWebMcp();
 
   useWebMcpTool({
     name: "whoami",
-    title: "Who is signed in",
+    title: "Whose page this is",
     description:
-      "Returns the signed-in person's display name, unit preference, experience level, training goal and weekly session target. Call this first in a session: the unit preference tells you whether to speak in kg or lb, and the goal shapes what you should program.",
+      "Returns the person's unit preference, experience level, training goal and weekly session target. Call this first in a session: the unit preference tells you whether to speak in kg or lb, and the goal shapes what you should program.",
     schema: z.object({}),
     annotations: {
       readOnlyHint: true,
@@ -57,7 +59,6 @@ export function useAccountTools() {
       const me = await apiFetch<ProfileView>("/api/me", { actor: "agent" });
       return toolOk(
         [
-          `${me.name} (${me.email}).`,
           `Prefers ${me.unitSystem === "metric" ? "kilograms" : "pounds"}; experience level ${me.experienceLevel}.`,
           `Targets ${me.weeklyTargetSessions} session(s) per week.`,
           untrusted("Stated goal", me.goal),
@@ -304,7 +305,7 @@ export function useAccountTools() {
         actor: "agent",
       });
 
-      await navigate(`/workout/${workout.id}`);
+      await navigate(linkPath(`/workout/${workout.id}`));
       await revalidator.revalidate();
 
       const closed = closing

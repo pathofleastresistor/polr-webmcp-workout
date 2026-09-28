@@ -70,9 +70,6 @@ export interface WorkoutDetailView extends WorkoutSummaryView {
 
 export interface ProfileView {
   id: string;
-  name: string;
-  email: string;
-  image: string | null;
   unitSystem: UnitSystem;
   experienceLevel: ExperienceLevel;
   goal: string | null;

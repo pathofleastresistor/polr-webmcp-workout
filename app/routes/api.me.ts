@@ -4,7 +4,7 @@ import { userProfile } from "~/db/schema";
 import { updateProfileInput } from "~/domain/contracts";
 import type { ProfileView } from "~/domain/types";
 import { handleApiRequest } from "~/server/api-handler.server";
-import { requireUser } from "~/server/session.server";
+import { requireUser, type AuthenticatedUser } from "~/server/access.server";
 
 import type { Route } from "./+types/api.me";
 
@@ -37,14 +37,9 @@ export async function action({ request, context }: Route.ActionArgs) {
   });
 }
 
-function toProfileView(
-  user: Awaited<ReturnType<typeof requireUser>>,
-): ProfileView {
+function toProfileView(user: AuthenticatedUser): ProfileView {
   return {
     id: user.id,
-    name: user.name,
-    email: user.email,
-    image: user.image,
     unitSystem: user.profile.unitSystem,
     experienceLevel: user.profile.experienceLevel,
     goal: user.profile.goal,

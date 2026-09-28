@@ -10,6 +10,7 @@ npm test                 # vitest in Node, against a real in-memory SQLite
 npm run build            # production build
 npm start                # serve the build with Node (server.js)
 npm run db:migrate       # apply migrations + seed the exercise catalog
+npm run link             # list people / mint a new private link for one
 ```
 
 Run `npm run typecheck && npm run lint && npm test` before committing.
@@ -26,10 +27,15 @@ app/domain/contracts.ts     Zod schema per operation — the single source of tr
                             re-parsed server-side. Change an operation here.
 app/webmcp/                 The agent surface: runtime detection, the registration
                             hook, the confirmation handshake, and the tools.
-app/routes/api.*.ts         Resource routes. The only server surface; the UI and
-                            the tools both call these.
+app/routes/api.*.ts         Resource routes, under /w/:key/api. The only server
+                            surface; the UI and the tools both call these.
+app/server/access.server.ts Resolves the person from the /w/<key> path prefix.
+                            There is no sign-in: the private link is the account.
 app/server/services/        Domain logic. Every function takes a userId and scopes
                             all queries by it — that is the authorization model.
+app/app.css                 Design tokens (Amit Varia design system) and the
+                            btn / card / input / badge classes. Use tokens,
+                            never raw colors.
 ```
 
 ### Adding a capability
@@ -47,8 +53,12 @@ UI equivalent means the person cannot see or undo what their agent did.
 
 - **Weights are kilograms everywhere** — database, API, tool arguments. Convert
   only for display, in `app/lib/units.ts`.
+- **The link is the credential.** Every page and API route lives under
+  `/w/:key`. Build client paths with `useLinkPath()`; `apiFetch("/api/…")`
+  resolves under the current link on its own. Never log or echo the key, and
+  store only its hash.
 - **The `X-Spotter-Actor` header is attribution, never authorization.** The
-  agent runs in the page with the user's session and has exactly the user's
+  agent runs in the page under the person's link and has exactly the person's
   privileges. Nothing may branch on it except the audit log.
 - **Consequential tools confirm.** Anything that writes a plan, removes work, or
   ends a session goes through `requestConfirmation`. Reads do not.
@@ -69,6 +79,9 @@ UI equivalent means the person cannot see or undo what their agent did.
   wraps them in a transaction. Its callback must stay synchronous —
   better-sqlite3 transactions are, and an `await` inside one would commit before
   the awaited work ran.
+- Migrations run with foreign keys OFF (`scripts/migrate.mjs`). A migration
+  that rebuilds a table drops it, and with enforcement on that cascades.
+  better-sqlite3 turns enforcement on by default, so it is set explicitly.
 - `server.js` and `server/*.mjs` are plain JavaScript on purpose: they run
   directly under Node with no build step. The public-origin fix-up lives there
   because React Router's single-fetch CSRF guard reads `request.url` before any

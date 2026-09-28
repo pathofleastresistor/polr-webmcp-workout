@@ -23,7 +23,7 @@ export default async function handleRequest(
   routerContext: EntryContext,
   loadContext: RouterContextProvider,
 ): Promise<Response> {
-  const nonce = loadContext.get(nonceContext);
+  const nonce = readNonce(loadContext);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), ABORT_DELAY);
@@ -63,4 +63,17 @@ export default async function handleRequest(
     status: didError ? 500 : responseStatusCode,
     headers: responseHeaders,
   });
+}
+
+/**
+ * A URL that matches no route never runs route middleware, so there is no
+ * nonce — and no CSP either, since the same middleware sets it. Rendering the
+ * 404 without one is safe; throwing here would turn every stray URL into a 500.
+ */
+function readNonce(loadContext: RouterContextProvider): string | undefined {
+  try {
+    return loadContext.get(nonceContext);
+  } catch {
+    return undefined;
+  }
 }

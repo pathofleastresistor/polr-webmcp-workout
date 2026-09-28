@@ -46,24 +46,24 @@ export function ConfirmationDialog() {
       }}
       onClose={deny}
       aria-labelledby="agent-confirm-title"
-      className="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-2xl border border-slate-700 bg-slate-900 p-0 text-slate-100 backdrop:bg-slate-950/70 backdrop:backdrop-blur-sm"
+      className="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-lg border border-line bg-surface-raised p-0 text-ink shadow-lift backdrop:bg-black/40"
     >
       <div className="p-6">
-        <p className="mb-2 inline-flex items-center gap-2 rounded-full bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-300 ring-1 ring-sky-500/30">
-          <span aria-hidden="true">✦</span>
-          Your agent wants to run <code className="font-mono">{toolName}</code>
+        <p className="badge badge-sky mb-3">
+          Your agent wants to run&nbsp;
+          <code className="font-mono">{toolName}</code>
         </p>
 
-        <h2 id="agent-confirm-title" className="text-xl font-semibold">
+        <h2 id="agent-confirm-title" className="title">
           {title}
         </h2>
-        <p className="mt-2 text-sm text-slate-300">{description}</p>
+        <p className="mt-2 text-ink-muted">{description}</p>
 
         {details && details.length > 0 && (
-          <ul className="mt-4 max-h-56 space-y-1 overflow-y-auto rounded-lg bg-slate-950/60 p-3 text-sm text-slate-200">
+          <ul className="mt-4 max-h-56 space-y-1 overflow-y-auto rounded-sm bg-surface-sunken p-3 text-sm">
             {details.map((detail, index) => (
               <li key={index} className="flex gap-2">
-                <span aria-hidden="true" className="text-slate-500">
+                <span aria-hidden="true" className="text-ink-muted">
                   •
                 </span>
                 <span>{detail}</span>
@@ -73,22 +73,14 @@ export function ConfirmationDialog() {
         )}
 
         <div className="mt-6 flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={deny}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
-          >
+          <button type="button" onClick={deny} className="btn btn-secondary">
             Not now
           </button>
           <button
             ref={confirmButtonRef}
             type="button"
             onClick={() => resolveConfirmation(id, true)}
-            className={
-              tone === "danger"
-                ? "rounded-lg bg-rose-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-300"
-                : "rounded-lg bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300"
-            }
+            className={tone === "danger" ? "btn btn-danger" : "btn btn-primary"}
           >
             {confirmLabel}
           </button>

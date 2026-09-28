@@ -24,12 +24,26 @@ mkdirSync(dirname(databasePath), { recursive: true });
 
 const sqlite = new SQLite(databasePath);
 sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = ON");
+
+// Foreign keys are OFF while migrating. A migration that rebuilds a table drops
+// the old one, and with enforcement on that drop cascades into every row
+// referencing it — rebuilding `user` would delete every workout. The migrator
+// runs inside a transaction, where a PRAGMA in the migration file itself is
+// ignored, so it has to be set on the connection. Explicitly: better-sqlite3
+// builds SQLite with enforcement on by default.
+sqlite.pragma("foreign_keys = OFF");
 
 const db = drizzle(sqlite);
 
 console.log(`spotter: applying migrations to ${databasePath}`);
 migrate(db, { migrationsFolder: "./drizzle/migrations" });
+
+const violations = sqlite.pragma("foreign_key_check");
+if (violations.length > 0) {
+  console.error("spotter: foreign key violations after migrating", violations);
+  process.exit(1);
+}
+sqlite.pragma("foreign_keys = ON");
 
 console.log("spotter: seeding exercise catalog");
 sqlite.exec(readFileSync("./drizzle/seed/exercises.sql", "utf8"));

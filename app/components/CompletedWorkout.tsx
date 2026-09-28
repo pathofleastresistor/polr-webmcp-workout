@@ -2,6 +2,7 @@ import { Link } from "react-router";
 
 import type { UnitSystem } from "~/db/schema";
 import type { WorkoutDetailView } from "~/domain/types";
+import { useLinkPath } from "~/lib/link";
 import { formatVolume, formatWeight } from "~/lib/units";
 
 /** Read-only view of a session that has been finished or discarded. */
@@ -12,6 +13,7 @@ export function CompletedWorkout({
   workout: WorkoutDetailView;
   unitSystem: UnitSystem;
 }) {
+  const linkPath = useLinkPath();
   const abandoned = workout.status === "abandoned";
 
   return (
@@ -19,26 +21,26 @@ export function CompletedWorkout({
       <div
         className={
           abandoned
-            ? "rounded-2xl border border-slate-800 bg-slate-900/40 p-6"
-            : "rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-6"
+            ? "rounded-lg bg-surface-sunken p-6"
+            : "rounded-lg bg-brand-soft p-6"
         }
       >
-        <h2 className="text-lg font-semibold">
-          {abandoned ? "Session discarded" : "Session complete"}
+        <h2 className="title">
+          {abandoned ? "Workout discarded" : "Workout done"}
         </h2>
-        <p className="mt-1 text-sm text-slate-400">
+        <p className="mt-1">
           {abandoned
-            ? "This one was discarded and does not count toward your training history."
-            : `${workout.completedSets} set(s) · ${formatVolume(workout.totalVolumeKg, unitSystem)}${
+            ? "It doesn't count toward your history."
+            : `${workout.completedSets} sets · ${formatVolume(workout.totalVolumeKg, unitSystem)}${
                 workout.durationMinutes !== null
-                  ? ` · ${workout.durationMinutes} minutes`
+                  ? ` · ${workout.durationMinutes} min`
                   : ""
               }`}
         </p>
       </div>
 
       {workout.notes && (
-        <p className="mt-6 whitespace-pre-line rounded-xl border border-slate-800 bg-slate-900/40 p-4 text-sm text-slate-300">
+        <p className="card mt-6 whitespace-pre-line text-ink-muted">
           {workout.notes}
         </p>
       )}
@@ -46,19 +48,16 @@ export function CompletedWorkout({
       {workout.exercises.length > 0 && (
         <ol className="mt-6 space-y-4">
           {workout.exercises.map((entry) => (
-            <li
-              key={entry.id}
-              className="rounded-xl border border-slate-800 bg-slate-900/40 p-4"
-            >
-              <h3 className="font-medium">{entry.exercise.name}</h3>
-              <ul className="mt-2 flex flex-wrap gap-2">
+            <li key={entry.id} className="card">
+              <h3 className="title">{entry.exercise.name}</h3>
+              <ul className="mt-3 flex flex-wrap gap-2">
                 {entry.sets.map((set) => (
                   <li
                     key={set.id}
                     className={
                       set.status === "completed"
-                        ? "rounded-md bg-slate-950/60 px-2 py-1 text-xs tabular-nums text-slate-200"
-                        : "rounded-md bg-slate-950/60 px-2 py-1 text-xs tabular-nums text-slate-600 line-through"
+                        ? "badge badge-neutral tabular-nums"
+                        : "badge badge-neutral text-ink-muted tabular-nums line-through"
                     }
                   >
                     {formatWeight(set.weightKg, unitSystem)} × {set.reps ?? "—"}
@@ -70,14 +69,9 @@ export function CompletedWorkout({
         </ol>
       )}
 
-      <div className="mt-8">
-        <Link
-          to="/dashboard"
-          className="rounded-xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-400"
-        >
-          Back to dashboard
-        </Link>
-      </div>
+      <Link to={linkPath()} className="btn btn-secondary mt-8">
+        Back to your page
+      </Link>
     </div>
   );
 }

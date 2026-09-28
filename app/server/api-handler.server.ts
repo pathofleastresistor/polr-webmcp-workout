@@ -8,7 +8,7 @@ import { getAppContext } from "./context";
 import { enforceRateLimit, rateLimitKey } from "./rate-limit.server";
 import { invalid } from "./services/errors";
 import { toErrorResponse } from "./services/errors";
-import { requireUser, type AuthenticatedUser } from "./session.server";
+import { requireUser, type AuthenticatedUser } from "./access.server";
 
 export interface ApiRequestContext<TInput> {
   input: TInput;
@@ -24,8 +24,8 @@ export interface ApiRequestContext<TInput> {
  * Header a WebMCP tool sets so the server can record *who* drove an action.
  *
  * It is an attribution hint for the audit trail, never an authorization input:
- * the agent runs in the page with the user's own session and therefore has
- * exactly the user's privileges, no more. Treating this header as a permission
+ * the agent runs in the page under the person's own link and therefore has
+ * exactly the person's privileges, no more. Treating this header as a permission
  * would be a privilege-escalation bug, so nothing branches on it except
  * logging.
  */

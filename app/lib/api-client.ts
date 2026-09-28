@@ -1,5 +1,7 @@
 import type { Actor } from "~/db/schema";
 
+import { currentLinkBase } from "./link";
+
 export class ApiError extends Error {
   constructor(
     readonly code: string,
@@ -24,8 +26,8 @@ interface RequestOptions {
  *
  * Both the UI and the WebMCP tools go through here, which is what makes a
  * button click and a tool call take the identical validated, authorized path
- * on the server. Requests are same-origin so the session cookie rides along
- * automatically; no token is ever handed to the agent.
+ * on the server. Paths are written as `/api/…` and resolved under the link the
+ * page is on, so the key never has to be handed to the agent as an argument.
  */
 export async function apiFetch<TResult>(
   path: string,
@@ -39,11 +41,12 @@ export async function apiFetch<TResult>(
   };
   if (body !== undefined) headers["Content-Type"] = "application/json";
 
-  const response = await fetch(path, {
+  const url = path.startsWith("/api/") ? `${currentLinkBase()}${path}` : path;
+
+  const response = await fetch(url, {
     method,
     headers,
-    // Never send the session cookie anywhere but our own origin.
-    credentials: "same-origin",
+    credentials: "omit",
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     ...(signal ? { signal } : {}),
   });
