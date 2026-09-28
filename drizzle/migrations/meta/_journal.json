@@ -15,6 +15,13 @@
       "when": 1785986188229,
       "tag": "0001_add_is_demo",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790563259114,
+      "tag": "0002_private_link",
+      "breakpoints": true
     }
   ]
 }

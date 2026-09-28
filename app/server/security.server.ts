@@ -22,11 +22,10 @@ function contentSecurityPolicy(nonce: string): string {
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}'`,
     "style-src 'self' 'unsafe-inline'",
-    // Google profile pictures.
-    "img-src 'self' data: https://lh3.googleusercontent.com",
+    "img-src 'self' data:",
     "font-src 'self'",
     "connect-src 'self'",
-    "form-action 'self' https://accounts.google.com",
+    "form-action 'self'",
     "frame-ancestors 'none'",
     "base-uri 'none'",
     "object-src 'none'",
@@ -43,11 +42,9 @@ export function generateNonce(): string {
 /**
  * Rejects state-changing requests whose `Origin` is not this deployment.
  *
- * Session cookies are `SameSite=Lax`, which already blocks cross-site form
- * posts, but this closes the gap for same-site-but-different-origin callers and
- * gives a second, explicit layer. It matters more than usual here: WebMCP tools
- * issue same-origin `fetch` calls carrying the user's cookies, so a page that
- * managed to run in our origin could otherwise drive the whole API.
+ * There are no cookies to ride along, so a cross-site page would need the
+ * person's link to do anything. This is the second lock: even holding a link,
+ * only this origin may write through it.
  */
 export function assertSameOrigin(request: Request, appUrl: string): void {
   if (SAFE_METHODS.has(request.method)) return;
@@ -83,7 +80,11 @@ export const securityMiddleware: MiddlewareFunction<Response> = async (
   const nonce = context.get(nonceContext);
   headers.set("Content-Security-Policy", contentSecurityPolicy(nonce));
   headers.set("X-Content-Type-Options", "nosniff");
-  headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  // The URL is the credential. No-referrer keeps it from leaking to any site
+  // a page links to, and noindex keeps a link that got pasted somewhere public
+  // out of search results.
+  headers.set("Referrer-Policy", "no-referrer");
+  headers.set("X-Robots-Tag", "noindex, nofollow");
   headers.set("X-Frame-Options", "DENY");
   headers.set(
     "Permissions-Policy",
@@ -92,7 +93,7 @@ export const securityMiddleware: MiddlewareFunction<Response> = async (
   headers.set("Cross-Origin-Opener-Policy", "same-origin");
   headers.set("Cross-Origin-Resource-Policy", "same-origin");
 
-  if (config.useSecureCookies) {
+  if (config.isHttps) {
     headers.set(
       "Strict-Transport-Security",
       "max-age=63072000; includeSubDomains; preload",

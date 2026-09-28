@@ -22,7 +22,7 @@ const proxied = (headers: Record<string, string> = {}) => ({
 /** The Fetch Request the Express adapter builds from those headers. */
 const requestFrom = (req: { headers: Record<string, string> }) =>
   new Request(
-    `${req.headers["x-forwarded-proto"]}://${req.headers.host}/demo/start.data`,
+    `${req.headers["x-forwarded-proto"]}://${req.headers.host}/_root.data`,
     {
       method: "POST",
       headers: req.headers.origin ? { Origin: req.headers.origin } : {},

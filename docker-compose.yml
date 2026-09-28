@@ -16,22 +16,9 @@ services:
     build: .
     restart: unless-stopped
     environment:
-      # The public origin browsers use. Drives the OAuth redirect, the
-      # cross-origin request check, and whether cookies are marked Secure.
-      # No trailing slash.
+      # The public origin browsers use. Drives the cross-origin request check
+      # and the link people bookmark. No trailing slash.
       APP_URL: ${APP_URL:?set APP_URL in .env, e.g. https://spotter.example.com}
-
-      # openssl rand -base64 32
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
-
-      # From https://console.cloud.google.com/apis/credentials. Authorised
-      # redirect URI must be exactly ${APP_URL}/api/auth/callback/google
-      # Leave blank and set DEMO_MODE=true to look around without them.
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-
-      # Authentication bypass for evaluation only. See README.
-      DEMO_MODE: ${DEMO_MODE:-}
     volumes:
       # The SQLite database. This is the only state worth backing up.
       - spotter-data:/data

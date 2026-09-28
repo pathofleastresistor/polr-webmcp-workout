@@ -67,7 +67,7 @@ describe("enforceRateLimit", () => {
 
   const spend = async (n: number, key = "user:a") => {
     for (let i = 0; i < n; i += 1) {
-      await enforceRateLimit("AUTH_RATE_LIMIT", key);
+      await enforceRateLimit("ANON_RATE_LIMIT", key);
     }
   };
 
@@ -80,7 +80,7 @@ describe("enforceRateLimit", () => {
 
     // The limiter signals by throwing a Response, which the handlers return
     // as-is, so the shape of that Response is part of the contract.
-    const rejection = await enforceRateLimit("AUTH_RATE_LIMIT", "user:a").then(
+    const rejection = await enforceRateLimit("ANON_RATE_LIMIT", "user:a").then(
       () => null,
       (error: unknown) => error,
     );
@@ -98,7 +98,7 @@ describe("enforceRateLimit", () => {
     // One noisy client must not spend anyone else's budget.
     await spend(20, "user:a");
     await expect(
-      enforceRateLimit("AUTH_RATE_LIMIT", "user:b"),
+      enforceRateLimit("ANON_RATE_LIMIT", "user:b"),
     ).resolves.toBeUndefined();
   });
 

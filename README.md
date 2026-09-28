@@ -1,14 +1,17 @@
 # Spotter
 
-A workout tracker and coach built **WebMCP-first**: it assumes the visitor is a
-person _and_ their browsing agent, working the same session together.
+A workout log you and your browser agent share.
+
+There is no sign-up. Press "Make my page" and you get a private link,
+`/w/<key>`. That link is your account: bookmark it. Everything — your workouts,
+history, settings — lives under it, and anyone who has it can see and change
+them.
 
 The agent reads your training history, programs your next workout, and logs sets
 as you call them out. You stay on the page, see everything it does, and approve
 anything consequential before it happens.
 
-- **Stack** — React Router v8 (SSR) on Node, SQLite + Drizzle, Better Auth with
-  Google sign-in, Tailwind v4, Zod.
+- **Stack** — React Router v8 (SSR) on Node, SQLite + Drizzle, Tailwind v4, Zod.
 - **Agent interface** — [WebMCP](https://webmachinelearning.github.io/webmcp/)
   (`document.modelContext`), 15 tools scoped to what is on screen.
 
@@ -46,17 +49,17 @@ in the agent console and persisted in `agent_event`.
 
 ## The tools
 
-Registered on every page, signed out:
+On the landing page:
 
-| Tool                   |                                                              |
-| ---------------------- | ------------------------------------------------------------ |
-| `get_service_overview` | What this service does, and that sign-in is the person's job |
+| Tool                   |                                                                    |
+| ---------------------- | ------------------------------------------------------------------ |
+| `get_service_overview` | What this service does, and that making a page is the person's job |
 
-Signed in, everywhere:
+On every page under a link:
 
 | Tool                    |                                                                              |
 | ----------------------- | ---------------------------------------------------------------------------- |
-| `whoami`                | Name, units, experience, goal, weekly target                                 |
+| `whoami`                | Units, experience, goal, weekly target                                       |
 | `list_workouts`         | History with volume, sets, duration                                          |
 | `get_workout`           | One session in full                                                          |
 | `get_training_insights` | Volume per muscle group, staleness, streak, estimated 1RMs                   |
@@ -101,76 +104,15 @@ it.
 
 ---
 
-## Try it without Google (demo mode)
+## Running it locally
 
-Setting up an OAuth client just to look around is a lot of ceremony. Demo mode
-replaces Google sign-in with a one-click throwaway account, seeded with eight
-weeks of sample training so the dashboard, the insights and every read tool have
-something real to work with.
+**Prerequisites:** Node 22+. No accounts, keys or cloud services.
 
 ```bash
 npm install
-
-printf 'BETTER_AUTH_SECRET=%s\nDEMO_MODE=true\n' "$(openssl rand -base64 32)" > .env
-
-npm run db:migrate
-npm run dev               # http://localhost:5173 -> "Explore the demo"
-```
-
-To put it on a public URL, set `DEMO_MODE=true` in the environment of a
-[self-hosted deployment](#self-hosting-with-docker). Set `APP_URL` to that
-public origin so cookies are marked `Secure` and the origin check matches.
-
-**Demo mode is an authentication bypass.** It is off unless `DEMO_MODE` is
-exactly `"true"`, it is absent from every committed env file, it logs a startup
-warning, and it shows a persistent banner on every page. `/demo/start` returns
-404 whenever it is off.
-
-Switching it off later revokes the demo logins: demo accounts are flagged
-`user_profile.is_demo`, and sessions belonging to one are rejected once the flag
-is unset — so a cookie minted during the demo does not survive the same
-deployment becoming real. The demo rows stay in the database; delete them with:
-
-```sql
-DELETE FROM user WHERE id IN (SELECT user_id FROM user_profile WHERE is_demo = 1);
-```
-
----
-
-## Running it locally (with Google)
-
-**Prerequisites:** Node 22+ and a Google OAuth client. No cloud account.
-
-```bash
-npm install
-```
-
-**1. Configure secrets**
-
-```bash
-cp .env.example .env
-```
-
-Fill in `.env` (gitignored):
-
-- `BETTER_AUTH_SECRET` — `openssl rand -base64 32`
-- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — from the
-  [Google Cloud console](https://console.cloud.google.com/apis/credentials).
-  Create an **OAuth 2.0 Web application** client and add
-  `http://localhost:5173/api/auth/callback/google` as an authorised redirect URI.
-
-**2. Create the database**
-
-```bash
-npm run db:migrate       # applies migrations and seeds 68 exercises
-```
-
-Creates `./data/spotter.db`. Both steps are idempotent, so re-running is safe.
-
-**3. Run**
-
-```bash
-npm run dev               # http://localhost:5173
+echo 'APP_URL=http://localhost:5173' > .env
+npm run db:migrate        # applies migrations and seeds 68 exercises
+npm run dev               # http://localhost:5173 -> "Make my page"
 ```
 
 WebMCP needs Chrome 146+ or Edge 147+. On anything else the app works fully by
@@ -191,11 +133,9 @@ follow; the architecture is the part that had to come first.
 
 Whatever runs it, three things matter:
 
-- `APP_URL` is load-bearing. It is the OAuth redirect base, the origin allowlist
-  for state-changing requests, and the value the server pins each request to. An
-  `https://` value is what flips cookies to `Secure` and enables HSTS.
-- Add `https://<your-domain>/api/auth/callback/google` to the Google client's
-  authorised redirect URIs.
+- `APP_URL` is load-bearing. It is the origin allowlist for state-changing
+  requests, the value the server pins each request to, and the base of the link
+  people are shown. An `https://` value enables HSTS.
 - The SQLite file needs durable storage. It is the only state worth backing up,
   and a platform with an ephemeral filesystem will lose it on every restart.
 
@@ -208,7 +148,7 @@ catalog are applied on every start, both idempotent, so there is no separate
 provisioning step.
 
 ```bash
-cp .env.example .env      # set SPOTTER_DOMAIN, APP_URL, BETTER_AUTH_SECRET, Google creds
+cp .env.example .env      # set SPOTTER_DOMAIN and APP_URL
 docker compose up -d
 ```
 
@@ -225,14 +165,12 @@ Already running Caddy on the host? Drop the `caddy` service, publish
 
 ### Getting `APP_URL` right
 
-`APP_URL` must be the public origin browsers use, with no trailing slash. It is
-load-bearing three times over:
+`APP_URL` must be the public origin browsers use, with no trailing slash:
 
-- it is the OAuth redirect base, so Google's authorised redirect URI must be
-  exactly `${APP_URL}/api/auth/callback/google`;
 - it is the allowlist for state-changing requests — a mismatch means every
   mutation returns 403;
-- an `https://` value is what marks cookies `Secure` and enables HSTS.
+- it is the base of the link people copy and bookmark;
+- an `https://` value enables HSTS.
 
 TLS terminating at Caddy is fine: the checks compare the browser's `Origin`
 header against `APP_URL`, not the scheme the container sees.
@@ -243,6 +181,19 @@ Everything worth keeping is the `spotter-data` volume (the SQLite database).
 Back that up. Migrations and the catalog seed re-run on every container start
 and are both idempotent.
 
+### Lost links, and accounts from before links
+
+Only a hash of each key is stored, so a lost link cannot be recovered — but a
+new one can be minted for the same person, which also retires the old one.
+Accounts created under the old Google sign-in have no link until you mint one:
+
+```bash
+npm run link              # lists people, their workout count and last activity
+npm run link -- <userId>  # prints a fresh link for that person
+```
+
+In the container: `docker compose exec spotter npm run link`.
+
 ---
 
 ## Security
@@ -250,16 +201,21 @@ and are both idempotent.
 The threat model has an extra actor most apps do not: an agent driving the page
 on the user's behalf, and possibly reading text written by someone else.
 
-- **Auth** — Google only, via Better Auth. No passwords stored. `HttpOnly`,
-  `SameSite=Lax`, `Secure` (on HTTPS) session cookies with 30-day sliding expiry.
+- **Access** — the link is a bearer credential: 128 random bits in the path.
+  Only its SHA-256 is stored, so a copy of the database hands out no working
+  links. There are no cookies, passwords or sessions. Pages send
+  `Referrer-Policy: no-referrer` so the link never leaks to a site the page
+  links to, and `X-Robots-Tag: noindex` so a link pasted somewhere public stays
+  out of search results. Unknown links are a 404, rate limited per IP.
 - **Authorization** — every service function takes a `userId` and scopes its
   queries by it. Another user's workout is indistinguishable from a nonexistent
   one, so ids leak no existence information. Covered by tests.
 - **The agent has exactly the user's privileges.** It acts through the page's own
-  session. The `X-Spotter-Actor` header is recorded for attribution and is never
+  link. The `X-Spotter-Actor` header is recorded for attribution and is never
   read as permission — treating it as one would be privilege escalation.
-- **CSRF** — `SameSite=Lax` plus an explicit `Origin` check on every mutation.
-  Requests with a foreign or missing `Origin` are rejected with 403.
+- **CSRF** — there are no ambient credentials to forge with, and every mutation
+  also gets an explicit `Origin` check. Requests with a foreign or missing
+  `Origin` are rejected with 403.
 - **XSS** — strict CSP with a per-response nonce and no `unsafe-inline` for
   scripts. Notes and titles are free text, which makes this the load-bearing
   control; `app/entry.server.tsx` exists to thread the nonce into React Router's
@@ -267,8 +223,8 @@ on the user's behalf, and possibly reading text written by someone else.
 - **Prompt injection** — tools returning user-authored text set
   `untrustedContentHint` and delimit the text, so an agent treats a workout note
   as data rather than instructions.
-- **Rate limiting** — per-user limits on tool traffic and per-IP
-  on auth, because an agent can loop far faster than a person can click.
+- **Rate limiting** — per-user limits on tool traffic and per-IP on page
+  creation and unknown links, because an agent can loop far faster than a person can click.
 - **Input validation** — Zod at the tool boundary and again on the server. The
   server's check is the only one trusted.
 - **Secrets** — environment variables only, never committed. `.env` is gitignored.
@@ -285,7 +241,7 @@ in the server's dependency graph at runtime.
 npm test
 ```
 
-82 tests run against a real in-memory SQLite database rather than a mock,
+Tests run against a real in-memory SQLite database rather than a mock,
 because much of the correctness lives in the SQL — unique indexes on `(workout,
 position)` and `(exercise, set_index)`, cascades, and transaction atomicity.
 Each test file gets its own database with the real migrations applied, so they
@@ -294,7 +250,7 @@ exercise the schema production actually has.
 They cover the full lifecycle, the guards (no second active workout, how a
 running session is closed when a new one starts, no re-planning over logged
 sets, no editing a finished session), cross-user
-isolation, the insights math, the rate limiter, the origin checks, and the
+isolation, link creation and lookup, the insights math, the rate limiter, the origin checks, and the
 contract/JSON-Schema conversion.
 
 ---

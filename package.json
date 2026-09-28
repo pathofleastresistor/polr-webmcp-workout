@@ -17,12 +17,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "node scripts/migrate.mjs"
+    "db:migrate": "node scripts/migrate.mjs",
+    "link": "node scripts/mint-link.mjs"
   },
   "dependencies": {
     "@react-router/express": "^8.3.0",
     "@react-router/node": "^8.3.0",
-    "better-auth": "^1.6.26",
     "better-sqlite3": "^12.2.0",
     "drizzle-orm": "^0.45.2",
     "express": "^5.1.0",

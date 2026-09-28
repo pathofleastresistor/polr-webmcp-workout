@@ -8,6 +8,7 @@ import type {
   WorkoutDetailView,
   WorkoutExerciseView,
 } from "~/domain/types";
+import { useLinkPath } from "~/lib/link";
 import { formatVolume, fromKg, toKg, unitLabel } from "~/lib/units";
 
 /**
@@ -26,6 +27,7 @@ export function WorkoutRunner({
   unitSystem: UnitSystem;
 }) {
   const fetcher = useFetcher();
+  const linkPath = useLinkPath();
   const busy = fetcher.state !== "idle";
 
   const totalSets = workout.exercises.reduce(
@@ -41,7 +43,7 @@ export function WorkoutRunner({
   const submit = (body: JsonObject, path = "") =>
     fetcher.submit(body, {
       method: "post",
-      action: `/api/workouts/${workout.id}${path}`,
+      action: linkPath(`/api/workouts/${workout.id}${path}`),
       encType: "application/json",
     });
 
@@ -49,7 +51,7 @@ export function WorkoutRunner({
     <div className="mt-8">
       <div className="flex items-center gap-4">
         <div
-          className="h-2 flex-1 overflow-hidden rounded-full bg-slate-800"
+          className="h-2 flex-1 overflow-hidden rounded-full bg-surface-sunken"
           role="progressbar"
           aria-valuenow={done}
           aria-valuemin={0}
@@ -57,25 +59,25 @@ export function WorkoutRunner({
           aria-label="Sets completed"
         >
           <div
-            className="h-full rounded-full bg-sky-500 transition-[width]"
+            className="h-full rounded-full bg-brand transition-[width]"
             style={{ width: `${totalSets ? (done / totalSets) * 100 : 0}%` }}
           />
         </div>
-        <span className="text-sm tabular-nums text-slate-400">
+        <span className="caption tabular-nums">
           {done}/{totalSets} sets
         </span>
-        <span className="text-sm tabular-nums text-slate-400">
+        <span className="caption tabular-nums">
           {formatVolume(workout.totalVolumeKg, unitSystem)}
         </span>
       </div>
 
       {workout.notes && (
-        <p className="mt-6 whitespace-pre-line rounded-xl border border-slate-800 bg-slate-900/40 p-4 text-sm text-slate-300">
+        <p className="card mt-6 whitespace-pre-line text-ink-muted">
           {workout.notes}
         </p>
       )}
 
-      <ol className="mt-8 space-y-6">
+      <ol className="mt-8 space-y-4">
         {workout.exercises.map((entry) => (
           <ExerciseCard
             key={entry.id}
@@ -95,12 +97,12 @@ export function WorkoutRunner({
         ))}
       </ol>
 
-      <div className="mt-10 flex flex-wrap gap-3 border-t border-slate-800 pt-6">
+      <div className="mt-12 flex flex-wrap gap-3">
         <button
           type="button"
           disabled={busy}
           onClick={() => submit({ op: "finish", workoutId: workout.id })}
-          className="rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-60"
+          className="btn btn-primary"
         >
           Finish workout
         </button>
@@ -117,7 +119,7 @@ export function WorkoutRunner({
             }
             submit({ op: "cancel", workoutId: workout.id });
           }}
-          className="rounded-xl px-5 py-3 text-sm text-slate-400 transition hover:bg-slate-900 hover:text-slate-200 disabled:opacity-60"
+          className="btn btn-secondary"
         >
           Discard
         </button>
@@ -144,23 +146,24 @@ function ExerciseCard({
   const remaining = entry.sets.filter((set) => set.status === "pending").length;
 
   return (
-    <li className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5">
+    <li className="card">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-lg font-medium">{entry.exercise.name}</h3>
-          <p className="mt-0.5 text-xs uppercase tracking-wide text-slate-500">
-            {entry.exercise.primaryMuscle} · {entry.exercise.equipment}
+          <h3 className="title">{entry.exercise.name}</h3>
+          <p className="caption mt-0.5 capitalize">
+            {entry.exercise.primaryMuscle.replace("_", " ")} ·{" "}
+            {entry.exercise.equipment}
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-500">
-            {remaining === 0 ? "done" : `${remaining} left`}
+          <span className="caption">
+            {remaining === 0 ? "Done" : `${remaining} left`}
           </span>
           <button
             type="button"
             onClick={onRemove}
             disabled={busy}
-            className="rounded-lg px-2 py-1 text-xs text-slate-500 transition hover:bg-slate-800 hover:text-rose-300 disabled:opacity-60"
+            className="btn btn-sm btn-ghost"
             aria-label={`Remove ${entry.exercise.name}`}
           >
             Remove
@@ -169,12 +172,13 @@ function ExerciseCard({
       </div>
 
       {entry.rationale && (
-        <p className="mt-3 rounded-lg bg-sky-500/5 px-3 py-2 text-sm text-sky-200/80 ring-1 ring-sky-500/20">
-          <span aria-hidden="true">✦</span> {entry.rationale}
+        <p className="mt-3 rounded-sm bg-sky-soft px-3 py-2 text-sm">
+          <span className="font-semibold text-sky-text">Why: </span>
+          {entry.rationale}
         </p>
       )}
 
-      <ul className="mt-4 space-y-2">
+      <ul className="mt-4 divide-y divide-line">
         {entry.sets.map((set) => (
           <SetRow
             key={set.id}
@@ -238,9 +242,9 @@ function SetRow({
   };
 
   return (
-    <li className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-950/40 px-3 py-2">
-      <span className="w-14 shrink-0 text-xs text-slate-500">
-        {set.isWarmup ? "warm" : `Set ${set.setIndex}`}
+    <li className="flex flex-wrap items-center gap-2 py-2">
+      <span className="caption w-14 shrink-0">
+        {set.isWarmup ? "Warm-up" : `Set ${set.setIndex}`}
       </span>
 
       <label className="flex items-center gap-1">
@@ -253,9 +257,9 @@ function SetRow({
           value={weight}
           disabled={isLogged || busy}
           onChange={(event) => setWeight(event.target.value)}
-          className="w-20 rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-sm tabular-nums disabled:opacity-60"
+          className="input h-9 w-20 px-2 tabular-nums"
         />
-        <span className="text-xs text-slate-500">{unitLabel(unitSystem)}</span>
+        <span className="caption">{unitLabel(unitSystem)}</span>
       </label>
 
       <label className="flex items-center gap-1">
@@ -268,31 +272,25 @@ function SetRow({
           value={reps}
           disabled={isLogged || busy}
           onChange={(event) => setReps(event.target.value)}
-          className="w-16 rounded-md border border-slate-800 bg-slate-900 px-2 py-1 text-sm tabular-nums disabled:opacity-60"
+          className="input h-9 w-16 px-2 tabular-nums"
         />
-        <span className="text-xs text-slate-500">reps</span>
+        <span className="caption">reps</span>
       </label>
 
       <div className="ml-auto flex items-center gap-2">
         {set.loggedBy === "agent" && (
-          <span
-            className="text-xs text-sky-400"
-            title="Logged by your agent"
-            aria-label="Logged by your agent"
-          >
-            ✦
-          </span>
+          <span className="caption text-sky-text">by agent</span>
         )}
 
         {isLogged ? (
           <span
             className={
               set.status === "completed"
-                ? "rounded-md bg-emerald-500/10 px-2 py-1 text-xs text-emerald-300"
-                : "rounded-md bg-slate-800 px-2 py-1 text-xs text-slate-400"
+                ? "badge badge-brand"
+                : "badge badge-neutral"
             }
           >
-            {set.status === "completed" ? "logged" : "skipped"}
+            {set.status === "completed" ? "Logged" : "Skipped"}
           </span>
         ) : (
           <>
@@ -300,7 +298,7 @@ function SetRow({
               type="button"
               disabled={busy}
               onClick={() => log("skipped")}
-              className="rounded-md px-2 py-1 text-xs text-slate-500 transition hover:bg-slate-800 disabled:opacity-60"
+              className="btn btn-sm btn-ghost"
             >
               Skip
             </button>
@@ -308,7 +306,7 @@ function SetRow({
               type="button"
               disabled={busy}
               onClick={() => log("completed")}
-              className="rounded-md bg-sky-500 px-3 py-1 text-xs font-semibold text-slate-950 transition hover:bg-sky-400 disabled:opacity-60"
+              className="btn btn-sm btn-secondary"
             >
               Log
             </button>

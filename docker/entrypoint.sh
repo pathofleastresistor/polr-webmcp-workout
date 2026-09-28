@@ -14,23 +14,14 @@ fail() {
   exit 1
 }
 
-[ -n "${BETTER_AUTH_SECRET:-}" ] || fail \
-  "BETTER_AUTH_SECRET is not set. Generate one with: openssl rand -base64 32"
-
 [ -n "${APP_URL:-}" ] || fail \
   "APP_URL is not set. It must be the public origin browsers use, e.g. https://spotter.example.com (no trailing slash)."
 
-# APP_URL shape is checked before credentials: it is the cheaper error, and
-# reporting it second would hide it behind the Google message.
 case "$APP_URL" in
   */) fail "APP_URL must not have a trailing slash." ;;
   http://*|https://*) ;;
   *) fail "APP_URL must be an absolute URL including the scheme, e.g. https://spotter.example.com" ;;
 esac
-
-if [ -z "${GOOGLE_CLIENT_ID:-}" ] && [ "${DEMO_MODE:-}" != "true" ]; then
-  fail "GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET are not set. Configure Google sign-in, or set DEMO_MODE=true to explore without it."
-fi
 
 # WebMCP is a secure-context API: over plain http (other than localhost) the
 # browser will not expose document.modelContext, tools silently fail to

@@ -31,11 +31,9 @@ export function InsightsPanel({
 
   return (
     <section>
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
-        Last {insights.windowWeeks} weeks
-      </h2>
+      <h2 className="heading">Last {insights.windowWeeks} weeks</h2>
 
-      <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <dl className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Stat label="Workouts" value={String(insights.totalWorkouts)} />
         <Stat label="Sets" value={String(insights.totalSets)} />
         <Stat
@@ -51,36 +49,34 @@ export function InsightsPanel({
               : undefined
           }
         />
-      </div>
+      </dl>
 
       {/*
         Keyed on work actually done, not on the length of the list: every
-        trainable group is now always present so an agent can see the gaps, so
-        a brand-new account would otherwise render a chart of ten empty bars.
+        trainable group is always present so an agent can see the gaps, so a
+        brand-new page would otherwise render a chart of empty bars.
       */}
       {insights.totalSets > 0 && (
         <div className="mt-8">
-          <h3 className="text-sm font-medium text-slate-300">
-            Where the work went
-          </h3>
-          <ul className="mt-3 space-y-2">
+          <h3 className="title">Where the work went</h3>
+          <ul className="mt-4 space-y-3">
             {insights.muscleGroupLoad.map((item) => (
               <li key={item.muscleGroup} className="flex items-center gap-3">
-                <span className="w-24 shrink-0 text-sm text-slate-400">
+                <span className="w-24 shrink-0 text-ink-muted">
                   {MUSCLE_LABELS[item.muscleGroup] ?? item.muscleGroup}
                 </span>
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-sunken">
                   <div
-                    className="h-full rounded-full bg-sky-500/70"
+                    className="h-full rounded-full bg-brand"
                     style={{
                       width: `${maxSets > 0 ? (item.sets / maxSets) * 100 : 0}%`,
                     }}
                   />
                 </div>
-                <span className="w-28 shrink-0 text-right text-xs text-slate-500">
+                <span className="caption w-24 shrink-0 text-right tabular-nums">
                   {item.sets} sets ·{" "}
                   {item.daysSinceLastTrained === null
-                    ? "—"
+                    ? "never"
                     : `${item.daysSinceLastTrained}d`}
                 </span>
               </li>
@@ -88,9 +84,9 @@ export function InsightsPanel({
           </ul>
 
           {insights.underworkedMuscleGroups.length > 0 && (
-            <p className="mt-4 rounded-lg bg-slate-900/60 px-3 py-2 text-sm text-slate-400">
+            <p className="mt-4 text-ink-muted">
               Least recently trained:{" "}
-              <span className="text-slate-200">
+              <span className="font-semibold text-ink">
                 {insights.underworkedMuscleGroups
                   .map((group) => MUSCLE_LABELS[group] ?? group)
                   .join(", ")}
@@ -102,19 +98,15 @@ export function InsightsPanel({
 
       {insights.personalRecords.length > 0 && (
         <div className="mt-8">
-          <h3 className="text-sm font-medium text-slate-300">
-            Best estimated 1RM
-          </h3>
-          <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+          <h3 className="title">Best estimated 1RM</h3>
+          <ul className="mt-4 grid gap-x-6 sm:grid-cols-2">
             {insights.personalRecords.slice(0, 6).map((record) => (
               <li
                 key={record.exerciseId}
-                className="flex items-baseline justify-between rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2"
+                className="flex items-baseline justify-between border-b border-line py-2"
               >
-                <span className="text-sm text-slate-300">
-                  {record.exerciseName}
-                </span>
-                <span className="text-sm font-medium text-slate-100">
+                <span>{record.exerciseName}</span>
+                <span className="font-semibold tabular-nums">
                   {formatWeight(record.estimatedOneRepMaxKg, unitSystem)}
                 </span>
               </li>
@@ -136,10 +128,12 @@ function Stat({
   hint?: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-      <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
-      {hint && <p className="mt-1 text-xs text-emerald-400">{hint}</p>}
+    <div className="card p-4">
+      <dt className="caption">{label}</dt>
+      <dd className="mt-1 font-display text-2xl font-bold whitespace-nowrap tabular-nums">
+        {value}
+      </dd>
+      {hint && <dd className="caption text-brand-text">{hint}</dd>}
     </div>
   );
 }

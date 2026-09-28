@@ -2,7 +2,6 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 
 import { createDatabase, type Database } from "~/db";
 import { exercise, user, userProfile } from "~/db/schema";
-import type { MUSCLE_GROUPS } from "~/db/schema";
 import type { UserProfile } from "~/db/schema";
 
 /**
@@ -21,19 +20,14 @@ export function testDb(): Database {
 
 let counter = 0;
 
-/** Creates a user with a profile, mirroring what the session layer does. */
+/** Creates a user with a profile, as `createUser` in users.server does. */
 export async function createUser(
   db: Database,
   overrides: Partial<UserProfile> = {},
 ): Promise<{ id: string; profile: UserProfile }> {
   const id = `user-${++counter}-${crypto.randomUUID().slice(0, 8)}`;
 
-  await db.insert(user).values({
-    id,
-    name: `Test User ${counter}`,
-    email: `test-${id}@example.com`,
-    emailVerified: true,
-  });
+  await db.insert(user).values({ id });
 
   const [profile] = await db
     .insert(userProfile)
@@ -92,42 +86,4 @@ export async function seedExercises(db: Database): Promise<void> {
       },
     ])
     .onConflictDoNothing();
-}
-
-/**
- * The catalog rows the demo rotation references. Seeded separately from the
- * small fixture set so demo tests exercise realistic sessions rather than the
- * degraded "exercise missing" path.
- */
-export async function seedDemoCatalog(db: Database): Promise<void> {
-  const rows: Array<[string, string, string]> = [
-    ["barbell-bench-press", "Barbell Bench Press", "chest"],
-    ["overhead-press", "Overhead Press", "shoulders"],
-    ["incline-dumbbell-press", "Incline Dumbbell Press", "chest"],
-    ["triceps-pushdown", "Triceps Pushdown", "triceps"],
-    ["back-squat", "Back Squat", "quads"],
-    ["romanian-deadlift", "Romanian Deadlift", "hamstrings"],
-    ["leg-press", "Leg Press", "quads"],
-    ["standing-calf-raise", "Standing Calf Raise", "calves"],
-    ["barbell-row", "Barbell Row", "back"],
-    ["lat-pulldown", "Lat Pulldown", "back"],
-    ["face-pull", "Face Pull", "back"],
-    ["barbell-curl", "Barbell Curl", "biceps"],
-    ["deadlift", "Deadlift", "back"],
-    ["goblet-squat", "Goblet Squat", "quads"],
-    ["plank", "Plank", "core"],
-  ];
-
-  const values = rows.map(([id, name, primaryMuscle]) => ({
-    id: id!,
-    slug: id!,
-    name: name!,
-    primaryMuscle: primaryMuscle as (typeof MUSCLE_GROUPS)[number],
-    secondaryMuscles: [],
-    equipment: "barbell",
-  }));
-
-  // Previously chunked to stay under D1's 100-bound-parameter cap. SQLite's
-  // limit is far higher, so this is one statement.
-  await db.insert(exercise).values(values).onConflictDoNothing();
 }
